@@ -13,7 +13,10 @@ f0 = 50;        % Frecuencia de la onda en Hz
 
 % Instantes de tiempo y valores de la señal
 t = (0:N-1) / Fs;
-x = sin(2*pi*f0*t);
+% Mezclamos dos ondas de distinta frecuencia y amplitud.
+x1 = sin(2*pi*50*t);          % Onda de 50 Hz, amplitud 1
+x2 = 0.5*cos(2*pi*120*t);     % Onda de 120 Hz, amplitud 0.5
+x = x1 + x2;
 
 % Gráfica de la señal en el tiempo
 figure;
@@ -21,7 +24,7 @@ plot(t, x, 'b');
 grid on;
 xlabel('Tiempo (s)');
 ylabel('Amplitud');
-title('Señal senoidal de 50 Hz');
+title('Mezcla de ondas de 50 Hz y 120 Hz');
 
 % Calculamos la DFT con nuestra propia funcion.
 X_dft = mi_dft(x);
@@ -67,17 +70,17 @@ xlim([0 Fs/2]);
 ylim([-180 180]);
 
 
-% Crear la carpeta de imagenes si no existe.
+
+% Guardamos las graficas para el informe.
 if ~exist('resultados', 'dir')
   mkdir('resultados');
 endif
 
-% Guardar las tres graficas de la senal de 50 Hz.
 figure(1);
-print('resultados/seno_tiempo.png', '-dpng', '-r150');
+print('resultados/mezcla_tiempo.png', '-dpng', '-r150');
 
 figure(2);
-print('resultados/seno_magnitud.png', '-dpng', '-r150');
+print('resultados/mezcla_magnitud.png', '-dpng', '-r150');
 
 figure(3);
-print('resultados/seno_fase.png', '-dpng', '-r150');
+print('resultados/mezcla_fase.png', '-dpng', '-r150');
