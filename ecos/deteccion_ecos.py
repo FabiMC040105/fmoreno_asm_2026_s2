@@ -260,7 +260,7 @@ def graficar_resultados(carpeta, fs, x, y_sin_ruido, y_ruido,
     # Figura 1 - senal transmitida
     nueva_figura()
     plt.plot(tx_ms, x, label="Chirp transmitido")
-    plt.title("Figura 1. Señal transmitida en el dominio del tiempo")
+    plt.title("Señal transmitida en el dominio del tiempo")
     plt.xlabel("Tiempo (ms)")
     plt.ylabel("Amplitud normalizada")
     plt.grid(True, alpha=0.3)
@@ -270,7 +270,7 @@ def graficar_resultados(carpeta, fs, x, y_sin_ruido, y_ruido,
     # Figura 2 - recibida con eco sin ruido
     nueva_figura()
     plt.plot(ty_ms, y_sin_ruido, label="Señal directa + eco")
-    plt.title("Figura 2. Señal recibida con un eco, sin ruido")
+    plt.title("Señal recibida con un eco, sin ruido")
     plt.xlabel("Tiempo (ms)")
     plt.ylabel("Amplitud normalizada")
     plt.grid(True, alpha=0.3)
@@ -280,7 +280,7 @@ def graficar_resultados(carpeta, fs, x, y_sin_ruido, y_ruido,
     # Figura 3 - recibida con ruido
     nueva_figura()
     plt.plot(ty_ms, y_ruido, label="Señal directa + eco + ruido")
-    plt.title("Figura 3. Señal recibida con eco y ruido")
+    plt.title("Señal recibida con eco y ruido")
     plt.xlabel("Tiempo (ms)")
     plt.ylabel("Amplitud normalizada")
     plt.grid(True, alpha=0.3)
@@ -290,7 +290,7 @@ def graficar_resultados(carpeta, fs, x, y_sin_ruido, y_ruido,
     # Figura 4 - correlacion directa
     nueva_figura()
     plt.plot(lags_ms, np.abs(r_dir_ruido), label="|r_yx[l]| directa")
-    plt.title("Figura 4. Correlación directa de la señal con ruido")
+    plt.title("Correlación directa de la señal con ruido")
     plt.xlabel("Lag / retardo (ms)")
     plt.ylabel("Magnitud de correlación")
     plt.grid(True, alpha=0.3)
@@ -300,7 +300,7 @@ def graficar_resultados(carpeta, fs, x, y_sin_ruido, y_ruido,
     # Figura 5 - correlacion FFT
     nueva_figura()
     plt.plot(lags_ms, np.abs(r_fft_ruido), label="|r_yx[l]| mediante FFT")
-    plt.title("Figura 5. Correlación mediante FFT")
+    plt.title("Correlación mediante FFT")
     plt.xlabel("Lag / retardo (ms)")
     plt.ylabel("Magnitud de correlación")
     plt.grid(True, alpha=0.3)
@@ -314,7 +314,7 @@ def graficar_resultados(carpeta, fs, x, y_sin_ruido, y_ruido,
              label="Directa")
     plt.plot(lags_ms, np.abs(r_fft_ruido) / normalizador,
              linestyle="--", label="FFT")
-    plt.title("Figura 6. Comparación de correlación directa y por FFT")
+    plt.title("Comparación de correlación directa y por FFT")
     plt.xlabel("Lag / retardo (ms)")
     plt.ylabel("Magnitud normalizada")
     plt.grid(True, alpha=0.3)
@@ -343,7 +343,7 @@ def graficar_resultados(carpeta, fs, x, y_sin_ruido, y_ruido,
     for retardo in retardos_multi:
         plt.axvline(1000.0 * retardo / fs, linestyle="--",
                     label=f"Eco esperado: {retardo} muestras")
-    plt.title("Figura 8. Detección de múltiples ecos")
+    plt.title("Detección de múltiples ecos")
     plt.xlabel("Lag / retardo (ms)")
     plt.ylabel("Magnitud de correlación")
     plt.grid(True, alpha=0.3)
@@ -353,7 +353,7 @@ def graficar_resultados(carpeta, fs, x, y_sin_ruido, y_ruido,
     # Figura 9 - efecto de amplitud del eco
     nueva_figura()
     plt.plot(amplitudes, picos_amplitud, marker="o")
-    plt.title("Figura 9. Efecto de la atenuación en el pico de correlación")
+    plt.title("Efecto de la atenuación en el pico de correlación")
     plt.xlabel("Amplitud relativa del eco")
     plt.ylabel("Magnitud del pico de correlación")
     plt.grid(True, alpha=0.3)
@@ -386,7 +386,7 @@ def imprimir_tabla_tiempos(filas):
 
 # Programa principal
 def main():
-    carpeta = Path("resultados_ecos")
+    carpeta = Path(__file__).resolve().parent / "resultados_ecos"
     carpeta.mkdir(parents=True, exist_ok=True)
 
     # 1) Referencia transmitida
@@ -576,7 +576,6 @@ def generar_grafica_espectros():
     print(f"Gráfica guardada en: {ruta}")
 
 
-
-
 if __name__ == "__main__":
     main()
+    generar_grafica_espectros()
