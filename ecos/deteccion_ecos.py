@@ -329,7 +329,7 @@ def graficar_resultados(carpeta, fs, x, y_sin_ruido, y_ruido,
     plt.plot(n_vals, t_dir, marker="o", label="Correlación directa")
     plt.plot(n_vals, t_fft, marker="o", label="Correlación FFT")
     plt.yscale("log")
-    plt.title("Figura 7. Tiempo de ejecución vs tamaño de señal")
+    plt.title("Tiempo de ejecución vs tamaño de señal")
     plt.xlabel("N (muestras por secuencia)")
     plt.ylabel("Tiempo mediano (ms, escala logarítmica)")
     plt.grid(True, alpha=0.3)
@@ -534,6 +534,48 @@ def main():
 
     imprimir_tabla_tiempos(tabla_tiempos)
     print(f"\nArchivos guardados en: {carpeta.resolve()}")
+
+
+
+def generar_grafica_espectros():
+    # Recreamos la señal transmitida y la recibida con un eco y ruido.
+    _, x = generar_senal()
+    n_total = int(round(FS * DURACION_REGISTRO))
+    d1 = int(round(FS * RETARDO_1))
+
+    y = simular_recibida(
+        x, n_total,
+        ecos=[(d1, AMPLITUD_ECO_1)],
+        ruido_std=RUIDO_STD,
+    )
+
+    # Igual longitud de FFT y una referencia común de magnitud.
+    # La señal transmitida se completa con ceros.
+    frecuencias = np.fft.rfftfreq(n_total, d=1.0 / FS)
+    X = np.abs(np.fft.rfft(x, n=n_total))
+    Y = np.abs(np.fft.rfft(y, n=n_total))
+    referencia = max(np.max(X), 1e-15)
+
+    carpeta = Path(__file__).resolve().parent / "resultados_ecos"
+    carpeta.mkdir(parents=True, exist_ok=True)
+
+    nueva_figura()
+    plt.plot(frecuencias / 1000, X / referencia,
+             label="Transmitida", linewidth=1.5)
+    plt.plot(frecuencias / 1000, Y / referencia,
+             label="Recibida con eco y ruido", alpha=0.7)
+    plt.title("Espectros de las señales transmitida y recibida")
+    plt.xlabel("Frecuencia (kHz)")
+    plt.ylabel("Magnitud relativa al máximo de la transmitida")
+    plt.xlim(0, FS / 2000)
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+
+    ruta = carpeta / "fig10_espectros.png"
+    guardar_figura(ruta)
+    print(f"Gráfica guardada en: {ruta}")
+
+
 
 
 if __name__ == "__main__":
