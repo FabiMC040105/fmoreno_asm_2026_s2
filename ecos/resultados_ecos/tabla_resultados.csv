@@ -1,0 +1,5 @@
+experimento,metodo,retardo_real_muestras,retardo_estimado_muestras,error_muestras,retardo_real_ms,retardo_estimado_ms,error_ms,distancia_m
+Sin ruido,Directo,960,960,0,20.0,20.0,0.0,3.43
+Sin ruido,FFT,960,960,0,20.0,20.0,0.0,3.43
+Con ruido,Directo,960,960,0,20.0,20.0,0.0,3.43
+Con ruido,FFT,960,960,0,20.0,20.0,0.0,3.43
