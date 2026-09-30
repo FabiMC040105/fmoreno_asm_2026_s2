@@ -96,17 +96,30 @@ void loop() {
 
   int deltaN = eco - directo;
 
-  Serial.println("----------------");
+  int deltaN = eco - directo;
 
-  Serial.print("Directo: ");
-  Serial.println(directo);
+float tau = (float)deltaN / FS;
 
-  Serial.print("Eco: ");
-  Serial.println(eco);
+float distancia_m = (343.0 * tau) / 2.0;
 
-  Serial.print("Atraso: ");
-  Serial.print(deltaN);
-  Serial.println(" muestras");
+Serial.println("----------------");
 
-  delay(2000);
-}
+Serial.print("Directo: ");
+Serial.println(directo);
+
+Serial.print("Eco: ");
+Serial.println(eco);
+
+Serial.print("Atraso: ");
+Serial.print(deltaN);
+Serial.println(" muestras");
+
+Serial.print("Tau: ");
+Serial.print(tau * 1000.0, 3);
+Serial.println(" ms");
+
+Serial.print("Distancia: ");
+Serial.print(distancia_m * 100.0, 1);
+Serial.println(" cm");
+
+delay(2000);
