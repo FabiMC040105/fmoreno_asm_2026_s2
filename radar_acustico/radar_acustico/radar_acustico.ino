@@ -1,4 +1,5 @@
 #include <math.h>
+#include <arduinoFFT.h>
 
 const int DAC_PIN = 25;
 const int MIC_PIN = 34;
@@ -12,11 +13,22 @@ const int N_CHIRP = FS * CHIRP_MS / 1000;
 const float F1 = 2000.0;
 const float F2 = 5000.0;
 
+// ---------- FFT ----------
+const int FFT_N = 1024;
+
+float vReal[FFT_N];
+float vImag[FFT_N];
+
+ArduinoFFT<float> FFT =
+  ArduinoFFT<float>(vReal, vImag, FFT_N, FS);
+
+// ---------- Radar ----------
 uint16_t muestras[N];
 int16_t chirp[N_CHIRP];
 long long corr[N - N_CHIRP];
 
 void setup() {
+
   Serial.begin(115200);
   analogReadResolution(12);
 
@@ -24,8 +36,13 @@ void setup() {
 
   // Crear chirp de referencia
   for (int n = 0; n < N_CHIRP; n++) {
-    float f = F1 + (F2 - F1) * ((float)n / N_CHIRP);
+
+    float f = F1 +
+              (F2 - F1) *
+              ((float)n / N_CHIRP);
+
     fase += 2.0 * PI * f / FS;
+
     chirp[n] = 100 * sin(fase);
   }
 
@@ -36,7 +53,10 @@ void loop() {
 
   unsigned long siguiente = micros();
 
-  // Emitir chirp y capturar
+  // ============================
+  // EMITIR CHIRP Y CAPTURAR
+  // ============================
+
   for (int n = 0; n < N; n++) {
 
     if (n < N_CHIRP)
@@ -53,7 +73,10 @@ void loop() {
 
   dacWrite(DAC_PIN, 128);
 
-  // Quitar componente DC
+  // ============================
+  // QUITAR COMPONENTE DC
+  // ============================
+
   long suma = 0;
 
   for (int i = 0; i < N; i++)
@@ -61,30 +84,96 @@ void loop() {
 
   int media = suma / N;
 
-  // Correlación
-  for (int lag = 0; lag < N - N_CHIRP; lag++) {
+  // ============================
+  // FFT
+  // ============================
+
+  for (int i = 0; i < FFT_N; i++) {
+
+    vReal[i] = (float)muestras[i] - media;
+    vImag[i] = 0.0;
+  }
+
+  // Ventana Hamming
+  FFT.windowing(
+    FFTWindow::Hamming,
+    FFTDirection::Forward
+  );
+
+  // Calcular FFT
+  FFT.compute(
+    FFTDirection::Forward
+  );
+
+  // Obtener magnitudes
+  FFT.complexToMagnitude();
+
+  // Buscar el pico únicamente dentro
+  // del rango del chirp: 2 kHz - 5 kHz
+
+  int binInicio =
+    (int)ceil(F1 * FFT_N / FS);
+
+  int binFin =
+    (int)floor(F2 * FFT_N / FS);
+
+  int picoFFT = binInicio;
+
+  for (int i = binInicio;
+       i <= binFin;
+       i++) {
+
+    if (vReal[i] > vReal[picoFFT])
+      picoFFT = i;
+  }
+
+  float frecuenciaPico =
+    ((float)picoFFT * FS) / FFT_N;
+
+  // ============================
+  // CORRELACIÓN
+  // ============================
+
+  for (int lag = 0;
+       lag < N - N_CHIRP;
+       lag++) {
 
     long long c = 0;
 
-    for (int k = 0; k < N_CHIRP; k++)
-      c += (long long)(muestras[lag + k] - media) * chirp[k];
+    for (int k = 0;
+         k < N_CHIRP;
+         k++) {
+
+      c +=
+        (long long)
+        (muestras[lag + k] - media)
+        * chirp[k];
+    }
 
     corr[lag] = llabs(c);
   }
 
-  // Buscar sonido directo
+  // ============================
+  // SONIDO DIRECTO
+  // ============================
+
   int directo = 0;
 
   for (int i = 1; i < 50; i++) {
+
     if (corr[i] > corr[directo])
       directo = i;
   }
 
-  // Ignorar zona alrededor del sonido directo
-  const int GUARD = N_CHIRP + 4;
+  // ============================
+  // ECO
+  // ============================
 
-  // Buscar eco
-  int eco = directo + GUARD;
+  const int GUARD =
+    N_CHIRP + 4;
+
+  int eco =
+    directo + GUARD;
 
   for (int i = directo + GUARD;
        i < N - N_CHIRP;
@@ -94,31 +183,46 @@ void loop() {
       eco = i;
   }
 
-  int deltaN = eco - directo;
+  // ============================
+  // TIEMPO Y DISTANCIA
+  // ============================
 
-float tau = (float)deltaN / FS;
+  int deltaN =
+    eco - directo;
 
-float distancia_m = (343.0 * tau) / 2.0;
+  float tau =
+    (float)deltaN / FS;
 
-Serial.println("----------------");
+  float distancia_m =
+    (343.0 * tau) / 2.0;
 
-Serial.print("Directo: ");
-Serial.println(directo);
+  // ============================
+  // RESULTADOS
+  // ============================
 
-Serial.print("Eco: ");
-Serial.println(eco);
+  Serial.println("----------------");
 
-Serial.print("Atraso: ");
-Serial.print(deltaN);
-Serial.println(" muestras");
+  Serial.print("Pico FFT: ");
+  Serial.print(frecuenciaPico, 1);
+  Serial.println(" Hz");
 
-Serial.print("Tau: ");
-Serial.print(tau * 1000.0, 3);
-Serial.println(" ms");
+  Serial.print("Directo: ");
+  Serial.println(directo);
 
-Serial.print("Distancia: ");
-Serial.print(distancia_m * 100.0, 1);
-Serial.println(" cm");
+  Serial.print("Eco: ");
+  Serial.println(eco);
 
-delay(2000);
+  Serial.print("Atraso: ");
+  Serial.print(deltaN);
+  Serial.println(" muestras");
+
+  Serial.print("Tau: ");
+  Serial.print(tau * 1000.0, 3);
+  Serial.println(" ms");
+
+  Serial.print("Distancia: ");
+  Serial.print(distancia_m * 100.0, 1);
+  Serial.println(" cm");
+
+  delay(2000);
 }
