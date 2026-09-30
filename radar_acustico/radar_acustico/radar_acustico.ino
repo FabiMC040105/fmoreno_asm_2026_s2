@@ -96,8 +96,6 @@ void loop() {
 
   int deltaN = eco - directo;
 
-  int deltaN = eco - directo;
-
 float tau = (float)deltaN / FS;
 
 float distancia_m = (343.0 * tau) / 2.0;
@@ -123,3 +121,4 @@ Serial.print(distancia_m * 100.0, 1);
 Serial.println(" cm");
 
 delay(2000);
+}
