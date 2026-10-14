@@ -239,5 +239,18 @@
       }
     ],
     "umbral_visualizacion_fase_retardo_db": -120
+  },
+  "implementacion": {
+    "estructura": "Cascada SOS, forma directa I propia",
+    "precision": "float64",
+    "n_bloque": 1024,
+    "estado_por_seccion": [
+      "x_anterior",
+      "x_dos_atras",
+      "y_anterior",
+      "y_dos_atras"
+    ],
+    "inicio": "Reposo al comenzar cada caso; continuidad entre bloques",
+    "alineacion": "Salida causal, sin compensar retardo ni retirar transitorio"
   }
 }

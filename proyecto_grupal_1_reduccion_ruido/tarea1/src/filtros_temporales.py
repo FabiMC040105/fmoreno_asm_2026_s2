@@ -1,7 +1,7 @@
-"""Tarea 1, apartado 2.3: carga, diseno y caracterizacion Butterworth.
+"""Tarea 1, apartado 2.3: diseno, caracterizacion y filtrado Butterworth.
 
 Conserva los datos del 2.2. Guarda el diseno en metadatos/filtro_temporal.json.
-Todavia no aplica el filtro a las senales.
+Aplica una ecuacion de diferencias propia por bloques y guarda salidas NPY.
 """
 
 import csv
@@ -288,6 +288,92 @@ def guardar_diseno(diseno, raiz=RAIZ):
     return destino
 
 
+def filtrar_sos_propio(entrada, sos, estado=None):
+    """Filtra un vector real mediante secciones SOS en forma directa I.
+
+    Cada fila SOS es [b0, b1, b2, a0, a1, a2]. Para cada seccion:
+      y[n] = (b0*x[n] + b1*x[n-1] + b2*x[n-2]
+              - a1*y[n-1] - a2*y[n-2]) / a0.
+    La salida de una seccion es la entrada de la siguiente.
+
+    estado tiene forma (numero_secciones, 4), con columnas
+    [x[n-1], x[n-2], y[n-1], y[n-2]] para cada seccion.
+    None indica reposo inicial. Devuelve (salida, estado_final) sin modificar
+    los argumentos. Para continuar otra porcion de la MISMA senal, pasar
+    estado_final a la siguiente llamada. No es el estado de scipy.sosfilt,
+    que utiliza una estructura interna diferente.
+    """
+    if np.iscomplexobj(entrada) or np.iscomplexobj(sos) or np.iscomplexobj(estado):
+        raise ValueError("Se esperan muestras, coeficientes y estados reales.")
+    x = np.asarray(entrada, dtype=np.float64)
+    coef = np.asarray(sos, dtype=np.float64)
+    if x.ndim != 1 or not np.all(np.isfinite(x)):
+        raise ValueError("La entrada debe ser un vector finito.")
+    if (coef.ndim != 2 or coef.shape[1] != 6 or len(coef) == 0
+            or not np.all(np.isfinite(coef)) or np.any(coef[:, 3] == 0)):
+        raise ValueError("SOS debe tener seis columnas finitas y a0 distinto de cero.")
+    # Normalizar una vez evita dividir por a0 dentro del bucle de muestras.
+    coef = coef / coef[:, 3:4]
+    if estado is None:
+        memoria = np.zeros((len(coef), 4), dtype=np.float64)
+    else:
+        memoria = np.array(estado, dtype=np.float64, copy=True)
+        if memoria.shape != (len(coef), 4) or not np.all(np.isfinite(memoria)):
+            raise ValueError("Estado incompatible con las secciones SOS.")
+
+    salida = np.empty_like(x)
+    for n, muestra in enumerate(x):
+        valor = muestra
+        for i, (b0, b1, b2, _, a1, a2) in enumerate(coef):
+            x1, x2, y1, y2 = memoria[i]
+            y = b0*valor + b1*x1 + b2*x2 - a1*y1 - a2*y2
+            memoria[i] = (valor, x1, y, y1)
+            valor = y
+        salida[n] = valor
+    if not np.all(np.isfinite(salida)) or not np.all(np.isfinite(memoria)):
+        raise FloatingPointError("El filtrado produjo valores no finitos.")
+    return salida, memoria
+
+
+def filtrar_por_bloques(entrada, sos, n_bloque, estado=None):
+    """Procesa bloques consecutivos conservando la memoria del filtro.
+
+    El ultimo bloque puede ser mas corto: no se rellena ni se recorta la
+    senal. Se conservan retardo causal y transitorio inicial; no se aplica
+    ventana, normalizacion de amplitud ni filtrado hacia atras.
+    """
+    if not isinstance(n_bloque, (int, np.integer)) or n_bloque <= 0:
+        raise ValueError("El tamano de bloque debe ser un entero positivo.")
+    x = np.asarray(entrada)
+    if x.ndim != 1:
+        raise ValueError("La entrada debe ser un vector.")
+    # Validar coeficientes/estado aun para una entrada vacia.
+    _, memoria = filtrar_sos_propio(x[:0], sos, estado)
+    salida = np.empty(len(x), dtype=np.float64)
+    for inicio in range(0, len(x), n_bloque):
+        fin = min(inicio + n_bloque, len(x))
+        salida[inicio:fin], memoria = filtrar_sos_propio(x[inicio:fin], sos, memoria)
+    return salida, memoria
+
+
+def procesar_casos(casos, diseno, n_bloque, raiz=RAIZ):
+    """Filtra cada mezcla desde reposo y guarda salida y estado final.
+
+    La referencia limpia no participa en el filtrado. Los archivos se
+    guardan en resultados/temporal/caso_i/ para conservar las entradas.
+    """
+    for numero, datos in sorted(casos.items()):
+        # Cada caso es una grabacion independiente: comienza desde reposo.
+        salida, estado = filtrar_por_bloques(
+            datos["contaminada"], diseno["sos"], n_bloque)
+        destino = Path(raiz) / "resultados" / "temporal" / f"caso_{numero}"
+        destino.mkdir(parents=True, exist_ok=True)
+        np.save(destino / "filtrada.npy", salida)
+        np.save(destino / "estado_final.npy", estado)
+        print(f"Caso {numero}: {len(salida)} muestras filtradas | "
+              f"pico de salida = {np.max(np.abs(salida)):.6f}")
+
+
 def main():
     config, casos = cargar_entradas()
     fs = config["fs_hz"]
@@ -302,6 +388,14 @@ def main():
     print("Entradas verificadas.")
     diseno = disenar_filtro(fs)
     caracterizacion = caracterizar_filtro(diseno, config["frecuencias_utiles_hz"])
+    diseno["implementacion"] = {
+        "estructura": "Cascada SOS, forma directa I propia",
+        "precision": "float64",
+        "n_bloque": bloque,
+        "estado_por_seccion": ["x_anterior", "x_dos_atras", "y_anterior", "y_dos_atras"],
+        "inicio": "Reposo al comenzar cada caso; continuidad entre bloques",
+        "alineacion": "Salida causal, sin compensar retardo ni retirar transitorio",
+    }
     ruta = guardar_diseno(diseno)
     v = diseno["verificacion_magnitud"]
     print(f"\nFiltro: {diseno['tipo']} Butterworth")
@@ -321,7 +415,8 @@ def main():
               f"{tono['retardo_grupo_muestras']:.4f} muestras "
               f"({tono['retardo_grupo_ms']:.4f} ms)")
     print("H(z), tabla de respuesta y figuras guardadas en resultados/.")
-    print("Diseno y caracterizacion completados; filtrado pendiente.")
+    procesar_casos(casos, diseno, bloque)
+    print("Diseno, caracterizacion y filtrado completados.")
 
 
 if __name__ == "__main__":
