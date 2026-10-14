@@ -137,6 +137,95 @@ def procesar_casos(casos, diseno, n_bloque, raiz=RAIZ):
               f"pico de salida = {np.max(np.abs(salida)):.6f}")
 
 
+def espectro_comparacion(entrada, fs):
+    """Espectro unilateral de amplitud con Hann sobre toda la grabacion.
+
+    Se corrige la ganancia coherente de la ventana. DC y, para longitud
+    par, Nyquist no se duplican. No se normaliza cada senal por su maximo:
+    las tres curvas comparten la referencia de amplitud 1.
+    La ventana se usa solo para visualizar; no modifica el filtrado.
+    """
+    x = np.asarray(entrada, dtype=float)
+    ventana = np.hanning(len(x))
+    amplitud = 2 * np.abs(np.fft.rfft(x * ventana)) / ventana.sum()
+    amplitud[0] /= 2
+    if len(x) % 2 == 0:
+        amplitud[-1] /= 2
+    frecuencias = np.fft.rfftfreq(len(x), d=1/fs)
+    db = 20 * np.log10(np.maximum(amplitud, 1e-8))
+    return frecuencias, db
+
+
+def graficar_comparaciones(casos, config, diseno, raiz=RAIZ):
+    """Compara referencia, mezcla y salida propia sin alinear ni reescalar.
+
+    Muestra el arranque y un intervalo posterior de la grabacion. Los
+    espectros usan los 16384 puntos actuales (0.5 Hz entre bins), no el
+    bloque de procesamiento de 1024. El retardo permanece visible.
+    """
+    raiz = Path(raiz)
+    fs = config["fs_hz"]
+    figuras = raiz / "resultados" / "figuras"
+    figuras.mkdir(parents=True, exist_ok=True)
+    titulos = {c["id"]: c["tipo_ruido"] for c in config["condiciones"]}
+    resumen, ejes = plt.subplots(len(casos), 2, figsize=(13, 10),
+                                 squeeze=False, layout="constrained")
+
+    def tiempo_en(ax, tiempo, series, inicio, fin, titulo):
+        dentro = (tiempo >= inicio) & (tiempo < fin)
+        for nombre, valores, color, estilo in series:
+            ax.plot(1000*tiempo[dentro], valores[dentro], color=color,
+                    ls=estilo, lw=1.1, alpha=.85, label=nombre)
+        ax.set(xlabel="Tiempo (ms)", ylabel="Amplitud", title=titulo)
+        ax.grid(alpha=.25)
+        ax.legend(fontsize=8, loc="upper right")
+
+    def frecuencia_en(ax, espectros, minimo, maximo, titulo):
+        for nombre, f, db, color, estilo in espectros:
+            ax.plot(f, db, color=color, ls=estilo, lw=1.1, alpha=.85, label=nombre)
+        for tono in config["frecuencias_utiles_hz"]:
+            ax.axvline(tono, color="gray", lw=.7, ls=":", alpha=.6)
+        ax.axvspan(diseno["especificaciones"]["borde_paso_hz"],
+                   diseno["especificaciones"]["borde_rechazo_hz"],
+                   color="gray", alpha=.08)
+        ax.set(xlabel="Frecuencia (Hz)", ylabel="Amplitud (dB ref. 1)",
+               xlim=(minimo, maximo), ylim=(-100, 5), title=titulo)
+        ax.grid(alpha=.25)
+        ax.legend(fontsize=8, loc="upper right")
+
+    for fila, (numero, datos) in enumerate(sorted(casos.items())):
+        salida = np.load(raiz / "resultados" / "temporal" / f"caso_{numero}" / "filtrada.npy")
+        if salida.shape != datos["contaminada"].shape:
+            raise ValueError(f"Caso {numero}: longitud de salida incompatible.")
+        tiempo = np.arange(len(salida))/fs
+        series = [("Contaminada", datos["contaminada"], "tab:orange", "-"),
+                  ("Limpia", datos["limpia"], "black", "--"),
+                  ("Filtrada causal", salida, "tab:blue", "-")]
+        espectros = []
+        for nombre, valores, color, estilo in series:
+            f, db = espectro_comparacion(valores, fs)
+            espectros.append((nombre, f, db, color, estilo))
+        fig, ax = plt.subplots(2, 2, figsize=(13, 8), layout="constrained")
+        tiempo_en(ax[0, 0], tiempo, series, 0, .025, "Arranque: incluye el transitorio inicial")
+        tiempo_en(ax[0, 1], tiempo, series, .5, .525, "Intervalo posterior: sin compensar retardo")
+        frecuencia_en(ax[1, 0], espectros, 0, fs/2, "Espectro de toda la grabación — ventana Hann")
+        frecuencia_en(ax[1, 1], espectros, 700, 2100, "Detalle: tono de 1024 Hz e interferencia")
+        fig.suptitle(f"Caso {numero}: {titulos[numero]}\n"
+                     "Mismo filtro y escala de amplitud; gris: banda de transición")
+        fig.savefig(figuras / f"temporal_caso{numero}_comparacion.png", dpi=160)
+        plt.close(fig)
+        tiempo_en(ejes[fila, 0], tiempo, series, .5, .525,
+                  f"Caso {numero}: comparación temporal")
+        frecuencia_en(ejes[fila, 1], espectros, 0, fs/2,
+                      f"Caso {numero}: comparación espectral")
+
+    resumen.suptitle("Filtro temporal aplicado a los tres casos\n"
+                     "Salida causal sin alineación; espectros con referencia común")
+    resumen.savefig(figuras / "temporal_tres_casos.png", dpi=160)
+    plt.close(resumen)
+    print("Comparaciones temporales y espectrales guardadas en resultados/figuras/.")
+
+
 def main():
     config, casos = cargar_entradas()
     fs = config["fs_hz"]
@@ -182,6 +271,7 @@ def main():
               f"({tono['retardo_grupo_ms']:.4f} ms)")
     print("H(z), tabla de respuesta y figuras guardadas en resultados/.")
     procesar_casos(casos, diseno, bloque)
+    graficar_comparaciones(casos, config, diseno)
     print("Diseno, caracterizacion y filtrado completados.")
 
 
