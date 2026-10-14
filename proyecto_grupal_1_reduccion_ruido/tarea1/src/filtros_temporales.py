@@ -1,11 +1,15 @@
 """Tarea 1, apartado 2.3: diseno, caracterizacion y filtrado Butterworth.
 
+Colocar en tarea1/src/. Ejecutar: python src/filtros_temporales.py
+Pruebas automaticas: python src/filtros_temporales.py --pruebas
 Conserva los datos del 2.2. Guarda el diseno en metadatos/filtro_temporal.json.
 Aplica una ecuacion de diferencias propia por bloques y guarda salidas NPY.
 """
 
+import argparse
 import csv
 import json
+import unittest
 from pathlib import Path
 
 import numpy as np
@@ -374,6 +378,110 @@ def procesar_casos(casos, diseno, n_bloque, raiz=RAIZ):
               f"pico de salida = {np.max(np.abs(salida)):.6f}")
 
 
+class TestFiltroTemporal(unittest.TestCase):
+    """Verifica la ecuacion propia y su continuidad, sin generar archivos.
+
+    La referencia es scipy.signal.sosfilt con reposo inicial. Se comparan
+    salidas, no estados internos: SciPy usa forma directa II transpuesta
+    y nuestra implementacion forma directa I.
+    Tolerancia absoluta: 1e-12; relativa: 0. Es una prueba numerica de
+    implementacion en float64, no una medida de reduccion de ruido.
+    """
+
+    ATOL = 1e-12
+
+    @classmethod
+    def setUpClass(cls):
+        cls.config, cls.casos = cargar_entradas()
+        cls.sos = np.asarray(disenar_filtro(cls.config["fs_hz"])["sos"])
+
+    def test_tres_casos_contra_scipy(self):
+        """Contrasta las tres mezclas completas con una referencia externa."""
+        for numero, datos in sorted(self.casos.items()):
+            with self.subTest(caso=numero):
+                x = datos["contaminada"]
+                salida, _ = filtrar_por_bloques(x, self.sos, self.config["n_bloque"])
+                referencia = signal.sosfilt(self.sos, x)
+                np.testing.assert_allclose(salida, referencia, atol=self.ATOL, rtol=0)
+                error = float(np.max(np.abs(salida - referencia)))
+                print(f"Caso {numero}: error maximo contra SciPy = {error:.3e}")
+
+    def test_impulso_y_escalon_contra_scipy(self):
+        """Comprueba arranque y transitorios con entradas deterministas."""
+        impulso = np.zeros(2048)
+        impulso[0] = 1
+        for nombre, x in (("impulso", impulso), ("escalon", np.ones(2048))):
+            with self.subTest(entrada=nombre):
+                salida, _ = filtrar_sos_propio(x, self.sos)
+                np.testing.assert_allclose(salida, signal.sosfilt(self.sos, x),
+                                           atol=self.ATOL, rtol=0)
+
+    def test_bloques_equivalentes_a_senal_completa(self):
+        """Incluye bloques unitarios y una longitud que no divide la senal."""
+        x = np.random.default_rng(20261014).standard_normal(2051)
+        completa, estado_completo = filtrar_sos_propio(x, self.sos)
+        for longitud in (1, 73, 1024, len(x) + 1):
+            with self.subTest(n_bloque=longitud):
+                salida, estado = filtrar_por_bloques(x, self.sos, longitud)
+                self.assertEqual(salida.shape, x.shape)
+                # Misma ecuacion y orden de operaciones: igualdad exacta.
+                np.testing.assert_array_equal(salida, completa)
+                np.testing.assert_array_equal(estado, estado_completo)
+
+    def test_continuidad_entre_llamadas(self):
+        """Reanuda con estado no nulo, incluso tras recibir un bloque vacio."""
+        x = self.casos[3]["contaminada"][:2051]
+        primera, estado = filtrar_por_bloques(x[:137], self.sos, 73)
+        estado_guardado = estado.copy()
+        vacia, siguiente = filtrar_sos_propio([], self.sos, estado)
+        self.assertEqual(vacia.size, 0)
+        np.testing.assert_array_equal(siguiente, estado_guardado)
+        segunda, final = filtrar_por_bloques(x[137:], self.sos, 511, siguiente)
+        np.testing.assert_array_equal(estado, estado_guardado)
+        np.testing.assert_array_equal(siguiente, estado_guardado)
+        completa, final_completo = filtrar_sos_propio(x, self.sos)
+        np.testing.assert_array_equal(np.concatenate((primera, segunda)), completa)
+        np.testing.assert_array_equal(final, final_completo)
+        np.testing.assert_allclose(completa, signal.sosfilt(self.sos, x),
+                                   atol=self.ATOL, rtol=0)
+
+    def test_coeficientes_no_normalizados(self):
+        """Multiplicar numerador y denominador no debe cambiar H(z)."""
+        x = np.random.default_rng(21).standard_normal(513)
+        escalados = self.sos * np.arange(2, len(self.sos) + 2)[:, None]
+        copia_coef = escalados.copy()
+        copia_x = x.copy()
+        salida, _ = filtrar_sos_propio(x, escalados)
+        np.testing.assert_allclose(salida, signal.sosfilt(self.sos, x),
+                                   atol=self.ATOL, rtol=0)
+        np.testing.assert_array_equal(escalados, copia_coef)
+        np.testing.assert_array_equal(x, copia_x)
+
+    def test_rechazo_de_entradas_invalidas(self):
+        """Evita ejecutar con dimensiones, muestras o estados invalidos."""
+        for entrada in (np.zeros((2, 2)), [np.nan], [np.inf], [1j]):
+            with self.subTest(entrada=str(entrada)):
+                with self.assertRaises(ValueError):
+                    filtrar_sos_propio(entrada, self.sos)
+        with self.assertRaises(ValueError):
+            filtrar_sos_propio([1], self.sos, np.zeros((len(self.sos), 2)))
+        malos = self.sos.copy()
+        malos[0, 3] = 0
+        with self.assertRaises(ValueError):
+            filtrar_sos_propio([1], malos)
+        for longitud in (0, -1, 1.5):
+            with self.subTest(n_bloque=longitud):
+                with self.assertRaises(ValueError):
+                    filtrar_por_bloques([1], self.sos, longitud)
+
+
+def ejecutar_pruebas():
+    """Ejecuta solo validaciones; devuelve un codigo de proceso para CI."""
+    suite = unittest.defaultTestLoader.loadTestsFromTestCase(TestFiltroTemporal)
+    resultado = unittest.TextTestRunner(verbosity=2).run(suite)
+    return 0 if resultado.wasSuccessful() else 1
+
+
 def main():
     config, casos = cargar_entradas()
     fs = config["fs_hz"]
@@ -420,4 +528,10 @@ def main():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Diseno y filtrado temporal de los tres casos.")
+    parser.add_argument("--pruebas", action="store_true",
+                        help="Ejecutar pruebas numericas sin generar salidas ni figuras.")
+    argumentos = parser.parse_args()
+    if argumentos.pruebas:
+        raise SystemExit(ejecutar_pruebas())
     main()
