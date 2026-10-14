@@ -11,6 +11,7 @@ from scipy import signal
 RAIZ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RAIZ / "src"))
 from temporal_datos import cargar_entradas
+from evaluar_hardware_temporal import codificar_dac, ATOL_FLOAT32
 from filtros_temporales import disenar_filtro, filtrar_sos_propio, filtrar_por_bloques
 
 
@@ -110,6 +111,42 @@ class TestFiltroTemporal(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     filtrar_por_bloques([1], self.sos, longitud)
 
+
+    def test_float32_precision_y_referencia(self):
+        """Compara float32 propio contra float64 propio y float32 de SciPy."""
+        for numero, caso in self.casos.items():
+            with self.subTest(caso=numero):
+                x = caso["contaminada"]
+                y32, estado = filtrar_por_bloques(x, self.sos, 1024, dtype=np.float32)
+                self.assertEqual(y32.dtype, np.dtype(np.float32))
+                self.assertEqual(estado.dtype, np.dtype(np.float32))
+                y64, _ = filtrar_sos_propio(x, self.sos)
+                referencia = signal.sosfilt(self.sos.astype(np.float32), x.astype(np.float32))
+                np.testing.assert_allclose(y32, y64, atol=ATOL_FLOAT32, rtol=0)
+                np.testing.assert_allclose(y32, referencia, atol=ATOL_FLOAT32, rtol=0)
+
+    def test_float32_continuidad(self):
+        """Un corte irregular y una llamada vacia preservan los estados float32."""
+        x = self.casos[3]["contaminada"][:2051]
+        y, estado = filtrar_sos_propio(x, self.sos, dtype=np.float32)
+        a, z = filtrar_por_bloques(x[:137], self.sos, 73, dtype=np.float32)
+        _, z = filtrar_sos_propio([], self.sos, z, dtype=np.float32)
+        b, final = filtrar_por_bloques(x[137:], self.sos, 73, z, dtype=np.float32)
+        np.testing.assert_array_equal(np.r_[a, b], y)
+        np.testing.assert_array_equal(final, estado)
+        for dtype in (np.int16, np.float16):
+            with self.assertRaises(ValueError):
+                filtrar_sos_propio(x, self.sos, dtype=dtype)
+
+    def test_dac_saturacion_y_cuantizacion(self):
+        """Verifica extremos, recorte sin wraparound y cota de medio LSB."""
+        codigos, _, recortes = codificar_dac([-2, -1, 0, 1, 2])
+        np.testing.assert_array_equal(codigos, [0, 0, 128, 255, 255])
+        self.assertEqual(recortes, 2)
+        x = np.linspace(-1, 1, 10001)
+        _, reconstruida, recortes = codificar_dac(x)
+        self.assertEqual(recortes, 0)
+        self.assertLessEqual(np.max(np.abs(reconstruida-x)), 1/255 + 1e-15)
 
 
 if __name__ == "__main__":

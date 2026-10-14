@@ -153,7 +153,7 @@ def caracterizar_filtro(diseno, tonos_hz=()):
         "fase_rad": fase, "retardo_muestras": retardo, "validos": validos,
     }
 
-def filtrar_sos_propio(entrada, sos, estado=None):
+def filtrar_sos_propio(entrada, sos, estado=None, *, dtype=np.float64):
     """Filtra un vector real mediante secciones SOS en forma directa I.
 
     Cada fila SOS es [b0, b1, b2, a0, a1, a2]. Para cada seccion:
@@ -167,11 +167,19 @@ def filtrar_sos_propio(entrada, sos, estado=None):
     los argumentos. Para continuar otra porcion de la MISMA senal, pasar
     estado_final a la siguiente llamada. No es el estado de scipy.sosfilt,
     que utiliza una estructura interna diferente.
+
+    dtype admite np.float64 (referencia) o np.float32 (precision reducida).
+    Coeficientes, muestras, operaciones y estados usan la precision elegida.
+    Conservar el mismo dtype al reanudar una grabacion. No simula instrucciones
+    fusionadas ni todos los detalles de un compilador de microcontrolador.
     """
+    dtype = np.dtype(dtype)
+    if dtype not in (np.dtype(np.float32), np.dtype(np.float64)):
+        raise ValueError("dtype debe ser float32 o float64.")
     if np.iscomplexobj(entrada) or np.iscomplexobj(sos) or np.iscomplexobj(estado):
         raise ValueError("Se esperan muestras, coeficientes y estados reales.")
-    x = np.asarray(entrada, dtype=np.float64)
-    coef = np.asarray(sos, dtype=np.float64)
+    x = np.asarray(entrada, dtype=dtype)
+    coef = np.asarray(sos, dtype=dtype)
     if x.ndim != 1 or not np.all(np.isfinite(x)):
         raise ValueError("La entrada debe ser un vector finito.")
     if (coef.ndim != 2 or coef.shape[1] != 6 or len(coef) == 0
@@ -180,9 +188,9 @@ def filtrar_sos_propio(entrada, sos, estado=None):
     # Normalizar una vez evita dividir por a0 dentro del bucle de muestras.
     coef = coef / coef[:, 3:4]
     if estado is None:
-        memoria = np.zeros((len(coef), 4), dtype=np.float64)
+        memoria = np.zeros((len(coef), 4), dtype=dtype)
     else:
-        memoria = np.array(estado, dtype=np.float64, copy=True)
+        memoria = np.array(estado, dtype=dtype, copy=True)
         if memoria.shape != (len(coef), 4) or not np.all(np.isfinite(memoria)):
             raise ValueError("Estado incompatible con las secciones SOS.")
 
@@ -200,7 +208,7 @@ def filtrar_sos_propio(entrada, sos, estado=None):
     return salida, memoria
 
 
-def filtrar_por_bloques(entrada, sos, n_bloque, estado=None):
+def filtrar_por_bloques(entrada, sos, n_bloque, estado=None, *, dtype=np.float64):
     """Procesa bloques consecutivos conservando la memoria del filtro.
 
     El ultimo bloque puede ser mas corto: no se rellena ni se recorta la
@@ -213,10 +221,10 @@ def filtrar_por_bloques(entrada, sos, n_bloque, estado=None):
     if x.ndim != 1:
         raise ValueError("La entrada debe ser un vector.")
     # Validar coeficientes/estado aun para una entrada vacia.
-    _, memoria = filtrar_sos_propio(x[:0], sos, estado)
-    salida = np.empty(len(x), dtype=np.float64)
+    _, memoria = filtrar_sos_propio(x[:0], sos, estado, dtype=dtype)
+    salida = np.empty(len(x), dtype=dtype)
     for inicio in range(0, len(x), n_bloque):
         fin = min(inicio + n_bloque, len(x))
-        salida[inicio:fin], memoria = filtrar_sos_propio(x[inicio:fin], sos, memoria)
+        salida[inicio:fin], memoria = filtrar_sos_propio(x[inicio:fin], sos, memoria, dtype=dtype)
     return salida, memoria
 
