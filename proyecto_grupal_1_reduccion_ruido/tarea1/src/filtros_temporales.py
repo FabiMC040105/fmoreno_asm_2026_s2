@@ -1,15 +1,26 @@
-"""Tarea 1, apartado 2.3: carga y verificacion de entradas.
+"""Tarea 1, apartado 2.3: carga de entradas y diseno Butterworth.
 
-Lee los datos del 2.2; no los regenera ni escribe archivos.
+Conserva los datos del 2.2. Guarda el diseno en metadatos/filtro_temporal.json.
+Todavia no aplica el filtro a las senales.
 """
 
 import json
 from pathlib import Path
 
 import numpy as np
+import scipy
+from scipy import signal
 
 
 RAIZ = Path(__file__).resolve().parents[1]
+
+# Objetivos referidos a ganancia unitaria.
+ESPECIFICACIONES = {
+    "borde_paso_hz": 1100.0,
+    "borde_rechazo_hz": 1600.0,
+    "perdida_maxima_paso_db": 1.0,
+    "atenuacion_minima_rechazo_db": 40.0,
+}
 
 
 def cargar_entradas(raiz=RAIZ):
@@ -68,6 +79,68 @@ def cargar_entradas(raiz=RAIZ):
     return config, casos
 
 
+def disenar_filtro(fs):
+    """Calcula el orden minimo Butterworth y comprueba su magnitud.
+
+    SOS sera la representacion de trabajo para reducir errores numericos.
+    b/a se conserva para expresar H(z); no se usa para filtrar en este paso.
+    Referencias: docs.scipy.org, scipy.signal.buttord y scipy.signal.butter.
+    """
+    e = ESPECIFICACIONES
+    fp = e["borde_paso_hz"]
+    fr = e["borde_rechazo_hz"]
+    if not 0 < fp < fr < fs / 2:
+        raise ValueError("Se requiere 0 < borde de paso < rechazo < Nyquist.")
+
+    orden, corte = signal.buttord(
+        fp, fr, e["perdida_maxima_paso_db"],
+        e["atenuacion_minima_rechazo_db"], fs=fs,
+    )
+    sos = signal.butter(orden, corte, btype="lowpass", fs=fs, output="sos")
+    b, a = signal.butter(orden, corte, btype="lowpass", fs=fs, output="ba")
+
+    # Incluimos ambos bordes exactamente en la malla de comprobacion.
+    frecuencias = np.unique(np.r_[np.linspace(0, fs / 2, 32769), fp, fr])
+    _, h = signal.sosfreqz(sos, worN=frecuencias, fs=fs)
+    db = 20 * np.log10(np.maximum(np.abs(h), np.finfo(float).tiny))
+    paso = db[frecuencias <= fp]
+    rechazo = db[frecuencias >= fr]
+    perdida = float(-paso.min())
+    atenuacion = float(-rechazo.max())
+    tolerancia_db = 1e-8
+    if (perdida > e["perdida_maxima_paso_db"] + tolerancia_db
+            or paso.max() > tolerancia_db
+            or atenuacion < e["atenuacion_minima_rechazo_db"] - tolerancia_db):
+        raise ValueError("El diseno no cumple las especificaciones de magnitud.")
+
+    return {
+        "familia": "Butterworth", "tipo": "IIR pasa bajas",
+        "caso_diseno": 1, "fs_hz": fs,
+        "especificaciones": dict(e), "orden": int(orden),
+        "frecuencia_corte_hz": float(corte),
+        "nota_corte": "Magnitud 1/sqrt(2), aproximadamente -3.0103 dB",
+        "representacion_procesamiento": "sos",
+        "columnas_sos": ["b0", "b1", "b2", "a0", "a1", "a2"],
+        "sos": sos.tolist(), "b": b.tolist(), "a": a.tolist(),
+        "verificacion_magnitud": {
+            "puntos_malla": len(frecuencias),
+            "perdida_maxima_paso_db": perdida,
+            "atenuacion_minima_rechazo_db": atenuacion,
+            "tolerancia_db": tolerancia_db,
+        },
+        "versiones": {"numpy": np.__version__, "scipy": scipy.__version__},
+    }
+
+
+def guardar_diseno(diseno, raiz=RAIZ):
+    """Guarda parametros y coeficientes sin alterar configuraciones.json."""
+    destino = Path(raiz) / "metadatos" / "filtro_temporal.json"
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    destino.write_text(json.dumps(diseno, indent=2, ensure_ascii=False,
+                                 allow_nan=False) + "\n", encoding="utf-8")
+    return destino
+
+
 def main():
     config, casos = cargar_entradas()
     fs = config["fs_hz"]
@@ -79,7 +152,20 @@ def main():
     print(f"Separacion entre bins: {fs / bloque:.3f} Hz")
     for numero, datos in sorted(casos.items()):
         print(f"Caso {numero}: entradas OK | SNR = {datos['snr_entrada_db']:.6f} dB")
-    print("Entradas listas para disenar el filtro temporal.")
+    print("Paso 1 completado: entradas listas para disenar el filtro temporal.")
+    diseno = disenar_filtro(fs)
+    ruta = guardar_diseno(diseno)
+    v = diseno["verificacion_magnitud"]
+    print(f"\nFiltro: {diseno['tipo']} Butterworth")
+    print(f"Orden: {diseno['orden']}")
+    print(f"Frecuencia de corte: {diseno['frecuencia_corte_hz']:.6f} Hz")
+    print(f"Secciones SOS: {len(diseno['sos'])}")
+    print(f"Perdida maxima en paso: {v['perdida_maxima_paso_db']:.6f} dB")
+    print(f"Atenuacion minima en rechazo: {v['atenuacion_minima_rechazo_db']:.6f} dB")
+    print("Coeficientes SOS [b0, b1, b2, a0, a1, a2]:")
+    print(np.array2string(np.array(diseno['sos']), precision=10))
+    print(f"Diseno guardado en: {ruta}")
+    print("Diseno verificado; filtrado pendiente.")
 
 
 if __name__ == "__main__":
