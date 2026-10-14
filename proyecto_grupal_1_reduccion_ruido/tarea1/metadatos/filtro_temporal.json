@@ -1,7 +1,6 @@
 {
   "familia": "Butterworth",
   "tipo": "IIR pasa bajas",
-  "caso_diseno": 1,
   "fs_hz": 8192,
   "especificaciones": {
     "borde_paso_hz": 1100.0,
@@ -111,6 +110,7 @@
     "numpy": "2.4.3",
     "scipy": "1.18.1"
   },
+  "caso_diseno": 1,
   "caracterizacion": {
     "ceros": [
       [
