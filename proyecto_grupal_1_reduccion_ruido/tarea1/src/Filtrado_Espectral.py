@@ -49,7 +49,10 @@ def reduccion_espectral_adaptativa(signal, block_size = 1024, umbral_energia = 0
 if __name__ == "__main__":
     print("2. Entrando al bloque principal de pruebas...")
     # También prestar atención a esta ruta.
-    base_path = Path(__file__).resolve().parent / "tarea1" / "pruebas"
+    # Directorio padre, tarea1
+    dir_padre = Path(__file__).resolve().parent.parent
+    # Directorio de pruebas, tarea1/pruebas
+    base_path = dir_padre / "pruebas"
     FS = 44100
 
     for i in range(1, 4):
