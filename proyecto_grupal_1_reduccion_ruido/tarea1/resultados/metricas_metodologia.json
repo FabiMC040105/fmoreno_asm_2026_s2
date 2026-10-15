@@ -1,0 +1,26 @@
+{
+  "notas": [
+    "Se usan los mismos 3 archivos limpia.npy/ruido.npy/contaminada.npy de la sección 2.2",
+    "MSE y SNR: señal limpia frente a salida causal SIN compensación de retardo ni reescalado",
+    "Energía útil conservada: 100*E(referencia limpia procesada)/E(referencia limpia); en espectral se congela máscara estimada SOLO de contaminada",
+    "Atenuación: 10log10(E(ruido inyectado)/E(ruido tratado con mismas ganancias)), medición offline con ruido conocido",
+    "Tiempo por bloque: mediana del tiempo total de cada llamada, dividido por bloques; se excluyen disco, figuras, importaciones y diseño",
+    "En temporal 16 bloques de 1024 (125 ms de adquisición); en espectral 33 ventanas de 1024 y salto 512 (62.5 ms entre saltos)",
+    "Memoria aproximada: buffers ideales de bloque en float64; NO es perfil real ni memoria máxima de Python, FFT o ESP32",
+    "Se corrigió cobertura y normalización OLA del código espectral, preservando la regla de decisión y el umbral 0.1 para comparación justa",
+    "Umbral 0.85 sólo en prueba adicional de compromiso del caso 3; no se mezcla con la tabla principal",
+    "La señal limpia se usa únicamente en evaluación offline; no participa en la detección de ruido"
+  ],
+  "hardware_ejecucion": {
+    "tipo": "PC / Python, no ESP32",
+    "plataforma": "Windows-10-10.0.26200-SP0",
+    "python": "3.11.9",
+    "numpy": "1.24.2"
+  },
+  "fs_hz": 8192,
+  "bloque_muestras": 1024,
+  "salto_espectral": 512,
+  "repeticiones_benchmark": 5,
+  "memoria_estimacion_temporal": "(6SOS*6coef + 6SOS*4estados + 2*N_bloque) * 8 bytes",
+  "memoria_estimacion_espectral": "6*N_bloque*8 + 2*N_bloque*16 bytes, ignorando buffers de grabación y overhead"
+}
