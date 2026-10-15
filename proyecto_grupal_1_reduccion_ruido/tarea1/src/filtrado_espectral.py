@@ -1,136 +1,97 @@
+"""Reducción adaptativa espectral FFT/IFFT con OLA normalizado.
+
+Adaptación trazable del módulo aportado por la persona 4.
+Se mantiene su regla espectral: cada magnitud inferior al umbral relativo
+al máximo del bloque se atenúa 10 veces (ganancia 0.1); las otras se conservan.
+
+Correcciones de integración verificables:
+- Se cubren todos los bloques, incluido el último.
+- Se añade un margen de N/2 muestras a ambos lados para cubrir bordes.
+- Se divide por la suma de ventanas superpuestas, evitando pérdida de amplitud.
+- Se usa rFFT/irFFT: simetría hermítica y reconstrucción real garantizadas.
+- La referencia limpia OPCIONAL se procesa con la misma máscara ya aprendida
+  de la mezcla SOLO para estimar preservación de señal en pruebas offline.
+
+El archivo filtrado_espectral_original.py guarda el original sin modificar.
+"""
+from __future__ import annotations
 import numpy as np
-import matplotlib.pyplot as plt
-from pathlib import Path  
-# Poner atención a la ruta de importación, ya que depende de la estructura del proyecto
-from generacion_senales import FS, N_BLOQUE, CASOS
 
 
-print("1. Iniciando el script...")
+def reduccion_espectral_adaptativa(signal, block_size=1024, umbral_energia=0.1,
+                                   referencia=None, devolver_detalles=False):
+    x = np.asarray(signal, dtype=np.float64)
+    if x.ndim != 1 or len(x) == 0 or not np.all(np.isfinite(x)):
+        raise ValueError('La entrada debe ser una señal real 1D finita no vacía')
+    if block_size < 4 or block_size & (block_size - 1):
+        raise ValueError('El tamaño de bloque debe ser potencia de dos y >= 4')
+    if not 0 <= umbral_energia <= 1:
+        raise ValueError('El umbral relativo debe estar entre 0 y 1')
+    if referencia is not None:
+        s = np.asarray(referencia, dtype=np.float64)
+        if s.shape != x.shape or not np.all(np.isfinite(s)):
+            raise ValueError('La referencia debe tener forma idéntica y datos finitos')
+    else:
+        s = None
 
-def reduccion_espectral_adaptativa(signal, block_size = 1024, umbral_energia = 0.1):
-    # Cadena mínima de reducción de ruido por bloques con solapamiento (Overlap-Add).
-    # a) Operar con bloques de tamaño potencia de dos
-    # d) Utilizar solapamiento (50% en este caso) con ventana
-    step_size = block_size // 2
-    window = np.hanning(block_size)
+    salto = block_size//2
+    # Hann periódica: con salto N/2 se obtiene exactamente COLA en el interior.
+    ventana = np.hanning(block_size + 1)[:-1]
+    # N/2 muestras de protección en cada extremo, evitando bordes de peso nulo.
+    x_pad = np.pad(x, (salto,salto))
+    s_pad = np.pad(s, (salto,salto)) if s is not None else None
+    # Permite registros de longitud arbitraria.
+    sobrante = (-(len(x_pad)-block_size)) % salto
+    if sobrante:
+        x_pad=np.pad(x_pad,(0,sobrante))
+        if s_pad is not None:s_pad=np.pad(s_pad,(0,sobrante))
+    salida = np.zeros_like(x_pad)
+    suma_ventanas = np.zeros_like(x_pad)
+    salida_referencia = np.zeros_like(x_pad) if s is not None else None
+    cuenta=0
 
-    # Preparar señal de salida
-    salida = np.zeros(len(signal) + block_size)
-
-    # Procesamiento por bloques
-    for i in range(0, len(signal) - block_size + 1, step_size):
-        # 1. Bloque con entrada y ventana
-        bloque = signal[i:i + block_size] * window
-
-        # 2. FFT
-        espectro = np.fft.fft(bloque)
+    for i in range(0, len(x_pad)-block_size+1, salto):
+        bloque = x_pad[i:i+block_size]*ventana
+        espectro = np.fft.rfft(bloque)
         magnitud = np.abs(espectro)
-        fase = np.angle(espectro)
+        umbral = float(np.max(magnitud))*umbral_energia
+        ganancia = np.where(magnitud < umbral, 0.1, 1.0)
+        # Al trabajar solo con los bins únicos de rFFT, una ganancia real
+        # preserva automáticamente la simetría requerida por irFFT.
+        filtrado = np.fft.irfft(espectro * ganancia, n=block_size)
+        salida[i:i+block_size] += filtrado
+        suma_ventanas[i:i+block_size] += ventana
+        if s_pad is not None:
+            s_fft = np.fft.rfft(s_pad[i:i+block_size]*ventana)
+            salida_referencia[i:i+block_size] += np.fft.irfft(s_fft*ganancia, n=block_size)
+        cuenta += 1
 
-        # 3. Estimación y modificación espectral (Parámetro adaptativo: umbral de energía)
-        # c) Parámetro adaptativo: umbral de atenuación basado en la energía del bloque
-        umbral = np.max(magnitud) * umbral_energia
+    rebanada = slice(salto,salto+len(x))
+    pesos = suma_ventanas[rebanada]
+    if np.any(pesos <= 0):
+        raise AssertionError('Ventanas no cubren todos los puntos de salida')
+    y=salida[rebanada]/pesos
+    if not np.all(np.isfinite(y)):
+        raise FloatingPointError('Salida espectral no finita')
+    if not devolver_detalles:
+        return y
+    detalles = dict(bloques_fft=cuenta, salto_muestras=salto,
+                    solapamiento_porcentaje=50,
+                    umbral_relativo=float(umbral_energia),
+                    ganancias_baja_magnitud=0.1,
+                    correccion='Hann periódica, márgenes, OLA normalizado')
+    if salida_referencia is not None:
+        detalles['referencia_con_mascara']=salida_referencia[rebanada]/pesos
+    return y, detalles
 
-        # Aplicar atenuación a componentes menores al umbral
-        magnitud_modificada = np.where(magnitud < umbral, magnitud * 0.1, magnitud)
 
-        # b) Preservar la simetría necesaria para reconstruir una señal real
-        # np.fft.fft genera el espectro simétrico, al modificar la magnitud en todo el arreglo
-        # basándonse en umbrales absolutos, la simetría se mantiene automáticamente.
-        espectro_modificado = magnitud_modificada * np.exp(1j*fase)
-
-        # 4. IFFT
-        bloque_procesado = np.fft.ifft(espectro_modificado).real
-
-        # 5. Reconstrucción y solapamiento (Overlap-Add)
-        salida[i:i + block_size] += bloque_procesado
-        
-    return salida[:len(signal)]
-if __name__ == "__main__":
-    print("2. Entrando al bloque principal de pruebas...")
-    # También prestar atención a esta ruta.
-    # Directorio padre, tarea1
-    dir_padre = Path(__file__).resolve().parent.parent
-    # Directorio de pruebas, tarea1/pruebas
-    base_path = dir_padre / "pruebas"
-    FS = 8192
-
-    for i in range(1, 4):
-        print(f"\n--- Procesando CASO {i} ---")
-        ruta_caso = base_path / f"caso_{i}"
-
-        try:
-            print("   Cargando archivos .npy...")
-            # Se hace el umbral muy agresivo en el Caso 3 para forzar la degradación de la señal útil
-            umbral = 0.1 if i != 3 else 0.85
-
-            # 1. Cargar señal contaminada validada por las pruebas
-            senal_contaminada = np.load(ruta_caso / "contaminada.npy")
-            senal_limpia = np.load(ruta_caso / "limpia.npy")
-
-            print("   Aplicando filtro FFT...")
-            #2. Aplicar el filtro usando el N_BLOQUE validado
-            # Ajusta el umbral según el caso
-            senal_filtrada = reduccion_espectral_adaptativa(
-                senal_contaminada,
-                block_size = N_BLOQUE,
-                umbral_energia = umbral
-            )
-
-            '''# Guardar señales .npy
-            nombre_archivo = f"filtrado_espectral_caso{i}.npy"
-            carpeta_script = Path(__file__).resolve().parent
-            ruta_salida_npy = carpeta_script / nombre_archivo 
-            np.save(ruta_salida_npy, s_filtrada)
-            print(f"   [+] Señal filtrada guardada exitosamente en: {ruta_salida_npy}")
-            # -----------------------------------------------------------'''
-            
-            # VISUALIZACIÓN
-            plt.figure(figsize=(14, 6))
-            
-            # 3A. Gráfica en el Dominio del Tiempo (Primeras 500 muestras para ver detalle)
-            plt.subplot(2, 1, 1)
-            muestras = 500
-            plt.plot(senal_contaminada[:muestras], label="Contaminada", alpha=0.5, color='gray')
-            plt.plot(senal_limpia[:muestras], label="Limpia (Referencia)", linestyle='--', color='blue')
-            plt.plot(senal_filtrada[:muestras], label="Filtrada (FFT)", color='orange', linewidth=1.5)
-            plt.title(f"CASO {i} - Reducción en el Tiempo")
-            plt.ylabel("Amplitud")
-            plt.legend()
-            plt.grid(True)
-            
-            # 3B. Gráfica en el Dominio de la Frecuencia (Espectro)
-            plt.subplot(2, 1, 2)
-            N = len(senal_contaminada)
-            freqs = np.fft.fftfreq(N, 1/FS)
-            mask = freqs >= 0  # Solo parte positiva
-            
-            # Espectros normalizados
-            espectro_contaminado = (2/N) * np.abs(np.fft.fft(senal_contaminada))
-            espectro_filtrado = (2/N) * np.abs(np.fft.fft(senal_filtrada))
-            
-            plt.plot(freqs[mask], espectro_contaminado[mask], label="Espectro Contaminado", alpha=0.5, color='gray')
-            plt.plot(freqs[mask], espectro_filtrado[mask], label="Espectro Filtrado", color='orange')
-            plt.xlim(0, 1500) # Ajustar el límite de frecuencia según los tonos disponibles
-            plt.title(f"CASO {i} - Salida Espectral")
-            plt.xlabel("Frecuencia (Hz)")
-            plt.ylabel("Magnitud")
-            plt.legend()
-            plt.grid(True)
-            
-            plt.tight_layout()
-            # Obtener la ruta exacta de la carpeta donde está este script
-            carpeta_script = Path(__file__).resolve().parent
-            ruta_imagen = carpeta_script / f"resultado_caso_{i}.png"
-            
-            # Guardar la imagen en esa carpeta
-            plt.savefig(ruta_imagen, bbox_inches='tight')
-            print(f"   ¡Gráfica guardada exitosamente en: {ruta_imagen}")
-            
-            # Limpiar la figura de la memoria para que el siguiente caso empiece en blanco
-            plt.close()
-        except FileNotFoundError as e:
-            print(f"   ERROR: No se encontró un archivo. Detalle: {e}")
-        except Exception as e:
-            print(f"   ERROR INESPERADO: {e}")
-print("\n4. Fin del script.")
+if __name__=='__main__':
+    from pathlib import Path
+    ruta = Path(__file__).resolve().parents[1]
+    for caso in range(1,4):
+        mezcla=np.load(ruta/'pruebas'/f'caso_{caso}'/'contaminada.npy')
+        y,info=reduccion_espectral_adaptativa(mezcla,1024,0.1, devolver_detalles=True)
+        dest=ruta/'resultados'/'espectral'/f'caso_{caso}'
+        dest.mkdir(parents=True,exist_ok=True)
+        np.save(dest/'filtrada.npy',y)
+        print(f'Caso {caso}: {len(y)} muestras, {info["bloques_fft"]} bloques FFT')
