@@ -1,0 +1,69 @@
+{
+  "entorno": "PC; no medido en ESP32",
+  "sistema": "Windows",
+  "arquitectura": "AMD64",
+  "procesador": "AMD64 Family 25 Model 117 Stepping 2, AuthenticAMD",
+  "python": "3.13.1",
+  "numpy": "2.4.3",
+  "fs_hz": 8192,
+  "bloque_muestras": 1024,
+  "repeticiones": 10,
+  "incluye": "Validacion, normalizacion SOS, asignacion y bucle propio; sin E/S ni figuras",
+  "tiempo_adquisicion_ms": 125.0,
+  "resultados": [
+    {
+      "caso": 1,
+      "precision": "float64",
+      "bloques_medidos": 160,
+      "media_ms": 9.285300000000001,
+      "mediana_ms": 9.1654,
+      "p95_ms": 9.915964999999998,
+      "maximo_ms": 15.4603
+    },
+    {
+      "caso": 2,
+      "precision": "float64",
+      "bloques_medidos": 160,
+      "media_ms": 9.35031125,
+      "mediana_ms": 9.12155,
+      "p95_ms": 10.226109999999998,
+      "maximo_ms": 16.1669
+    },
+    {
+      "caso": 3,
+      "precision": "float64",
+      "bloques_medidos": 160,
+      "media_ms": 9.242220624999998,
+      "mediana_ms": 9.178899999999999,
+      "p95_ms": 9.77215,
+      "maximo_ms": 10.2064
+    },
+    {
+      "caso": 1,
+      "precision": "float32",
+      "bloques_medidos": 160,
+      "media_ms": 9.275695625,
+      "mediana_ms": 9.11035,
+      "p95_ms": 10.132869999999988,
+      "maximo_ms": 15.4672
+    },
+    {
+      "caso": 2,
+      "precision": "float32",
+      "bloques_medidos": 160,
+      "media_ms": 9.603275,
+      "mediana_ms": 9.4221,
+      "p95_ms": 10.541139999999999,
+      "maximo_ms": 14.6863
+    },
+    {
+      "caso": 3,
+      "precision": "float32",
+      "bloques_medidos": 160,
+      "media_ms": 9.35125375,
+      "mediana_ms": 9.11445,
+      "p95_ms": 10.530884999999985,
+      "maximo_ms": 14.519
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "placa": "ESP32 AD42922; perfil Arduino ESP32 Dev Module",
+  "alcance": "Simulacion numerica en PC; sin medicion de firmware",
+  "versiones": {
+    "numpy": "2.4.3",
+    "scipy": "1.18.1"
+  },
+  "fs_hz": 8192,
+  "bloque_muestras": 1024,
+  "tolerancia_float32": {
+    "absoluta": 2e-06,
+    "relativa": 0
+  },
+  "coeficientes": {
+    "error_max": 4.57316058355417e-08,
+    "radio_polar_max": 0.9034902052018553,
+    "estable": true,
+    "perdida_paso_db": 0.9999984036689726,
+    "atenuacion_rechazo_db": 41.10123075116814
+  },
+  "casos": [
+    {
+      "caso": 1,
+      "error_max_coeficientes": 3.3974403873537895e-08,
+      "error_max_float32": 9.702146347434493e-08,
+      "error_rms_float32": 3.039783861509544e-08,
+      "cumple_tolerancia": true,
+      "pico_float32": 0.31481343507766724,
+      "muestras_saturadas": 0,
+      "error_max_dac_ideal": 0.003921457010054752
+    },
+    {
+      "caso": 2,
+      "error_max_coeficientes": 5.4701010165914e-08,
+      "error_max_float32": 2.936738762171487e-07,
+      "error_rms_float32": 6.240677699924173e-08,
+      "cumple_tolerancia": true,
+      "pico_float32": 0.552897036075592,
+      "muestras_saturadas": 0,
+      "error_max_dac_ideal": 0.003921254703360688
+    },
+    {
+      "caso": 3,
+      "error_max_coeficientes": 1.2216223277405902e-07,
+      "error_max_float32": 3.152558242791592e-07,
+      "error_rms_float32": 6.851208236081604e-08,
+      "cumple_tolerancia": true,
+      "pico_float32": 0.8122116923332214,
+      "muestras_saturadas": 0,
+      "error_max_dac_ideal": 0.003921285943657704
+    }
+  ],
+  "memoria": {
+    "coeficientes_bytes": 144,
+    "estados_bytes": 96,
+    "entrada_bytes": 4096,
+    "salida_bytes": 4096,
+    "total_bytes": 8432,
+    "doble_buffer_total_bytes": 16624
+  },
+  "saturacion": {
+    "pico_escalon": 1.2098362445831299,
+    "pico_estres": 2.0899300575256348,
+    "recortes_estres": 420,
+    "norma_l1_truncada": 2.0899298077659783,
+    "suma_abs_ultimas_256": 1.604017021571806e-169,
+    "ganancia_previa_orientativa": 0.4545607208767927
+  },
+  "q15": {
+    "resolucion": 3.0517578125e-05,
+    "numerador_primera_seccion_redondeado": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "coeficientes_fuera_rango": 22
+  }
+}
