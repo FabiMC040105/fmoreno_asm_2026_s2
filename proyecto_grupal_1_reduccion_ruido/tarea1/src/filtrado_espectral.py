@@ -18,7 +18,7 @@ def reduccion_espectral_adaptativa(signal, block_size = 1024, umbral_energia = 0
     salida = np.zeros(len(signal) + block_size)
 
     # Procesamiento por bloques
-    for i in range(0, len(signal) - block_size, step_size):
+    for i in range(0, len(signal) - block_size + 1, step_size):
         # 1. Bloque con entrada y ventana
         bloque = signal[i:i + block_size] * window
 
@@ -76,6 +76,14 @@ if __name__ == "__main__":
                 block_size = N_BLOQUE,
                 umbral_energia = umbral
             )
+
+            '''# Guardar señales .npy
+            nombre_archivo = f"filtrado_espectral_caso{i}.npy"
+            carpeta_script = Path(__file__).resolve().parent
+            ruta_salida_npy = carpeta_script / nombre_archivo 
+            np.save(ruta_salida_npy, s_filtrada)
+            print(f"   [+] Señal filtrada guardada exitosamente en: {ruta_salida_npy}")
+            # -----------------------------------------------------------'''
             
             # VISUALIZACIÓN
             plt.figure(figsize=(14, 6))
