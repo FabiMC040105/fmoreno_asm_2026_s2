@@ -1,0 +1,153 @@
+{
+  "descripcion": "Tarea 1 CE1110 apartado 2.2; datos sintéticos reproducibles",
+  "generador": "src/generacion_senales.py",
+  "fs_hz": 8192,
+  "n_bloque": 1024,
+  "n_total": 16384,
+  "duracion_s": 2.0,
+  "resolucion_bloque_hz": 8.0,
+  "frecuencias_utiles_hz": [
+    256.0,
+    512.0,
+    1024.0
+  ],
+  "amplitudes_originales": [
+    0.4,
+    0.25,
+    0.15
+  ],
+  "fases_utiles_rad": [
+    0.0,
+    0.4,
+    0.9
+  ],
+  "ganancia_global_anticlip": 0.521849406577605,
+  "amplitudes_efectivas": [
+    0.20873976263104202,
+    0.13046235164440126,
+    0.07827741098664075
+  ],
+  "bandas_energia_hz": [
+    0,
+    400,
+    700,
+    900,
+    1150,
+    1450,
+    2100,
+    4096.0
+  ],
+  "wav": "IEEE float 32-bit mono; NPY float64 como referencia sin cuantizar",
+  "condiciones": [
+    {
+      "id": 1,
+      "semilla": 20261021,
+      "snr_objetivo_db": 5.0,
+      "tipo_ruido": "Interferencia sinusoidal separada",
+      "interferencia_hz": 1792.0,
+      "caso": 1,
+      "fs_hz": 8192,
+      "n_bloque": 1024,
+      "n_total": 16384,
+      "duracion_s": 2.0,
+      "snr_obtenida_db": 4.999999999999999,
+      "error_snr_db": -8.881784197001252e-16,
+      "potencia_limpia": 0.03336003338531136,
+      "potencia_ruido": 0.010549368831684143,
+      "pico_contaminada": 0.45166758890657366,
+      "bandas_energia_ruido_pct": {
+        "0-400Hz": 5.685225921226782e-24,
+        "400-700Hz": 2.051847991612873e-24,
+        "700-900Hz": 2.653197883054335e-25,
+        "900-1150Hz": 5.981695683198715e-25,
+        "1150-1450Hz": 9.79028859495831e-24,
+        "1450-2100Hz": 100.0,
+        "2100-4096Hz": 2.0787750088364977e-23
+      },
+      "rutas": {
+        "limpia": "pruebas/caso_1/limpia.wav",
+        "ruido": "pruebas/caso_1/ruido.wav",
+        "contaminada": "pruebas/caso_1/contaminada.wav",
+        "npy_misma_base": true,
+        "figura": "resultados/figuras/caso1_resumen.png",
+        "psd": "resultados/figuras/caso1_psd.png"
+      }
+    },
+    {
+      "id": 2,
+      "semilla": 20261022,
+      "snr_objetivo_db": 3.0,
+      "tipo_ruido": "Ruido blanco gaussiano",
+      "caso": 2,
+      "fs_hz": 8192,
+      "n_bloque": 1024,
+      "n_total": 16384,
+      "duracion_s": 2.0,
+      "snr_obtenida_db": 3.000000000000001,
+      "error_snr_db": 8.881784197001252e-16,
+      "potencia_limpia": 0.03336003338531136,
+      "potencia_ruido": 0.016719622846097647,
+      "pico_contaminada": 0.7708920895503235,
+      "bandas_energia_ruido_pct": {
+        "0-400Hz": 10.029519324173215,
+        "400-700Hz": 7.310465664046374,
+        "700-900Hz": 4.8236474491023404,
+        "900-1150Hz": 6.054560555733936,
+        "1150-1450Hz": 7.885037825234186,
+        "1450-2100Hz": 15.060407779182734,
+        "2100-4096Hz": 48.83636140252722
+      },
+      "rutas": {
+        "limpia": "pruebas/caso_2/limpia.wav",
+        "ruido": "pruebas/caso_2/ruido.wav",
+        "contaminada": "pruebas/caso_2/contaminada.wav",
+        "npy_misma_base": true,
+        "figura": "resultados/figuras/caso2_resumen.png",
+        "psd": "resultados/figuras/caso2_psd.png"
+      }
+    },
+    {
+      "id": 3,
+      "semilla": 20261023,
+      "snr_objetivo_db": 0.0,
+      "tipo_ruido": "Ruido aleatorio limitado a 850-1300 Hz",
+      "banda_ruido_hz": [
+        850.0,
+        1300.0
+      ],
+      "caso": 3,
+      "fs_hz": 8192,
+      "n_bloque": 1024,
+      "n_total": 16384,
+      "duracion_s": 2.0,
+      "snr_obtenida_db": 0.0,
+      "error_snr_db": 0.0,
+      "potencia_limpia": 0.03336003338531136,
+      "potencia_ruido": 0.03336003338531136,
+      "pico_contaminada": 0.9500000000000001,
+      "bandas_energia_ruido_pct": {
+        "0-400Hz": 0.0002245522053893247,
+        "400-700Hz": 0.000201976412330733,
+        "700-900Hz": 8.79339583675527,
+        "900-1150Hz": 60.46876347887123,
+        "1150-1450Hz": 30.736618383823032,
+        "1450-2100Hz": 0.0006853353034799095,
+        "2100-4096Hz": 0.00011043662927175281
+      },
+      "rutas": {
+        "limpia": "pruebas/caso_3/limpia.wav",
+        "ruido": "pruebas/caso_3/ruido.wav",
+        "contaminada": "pruebas/caso_3/contaminada.wav",
+        "npy_misma_base": true,
+        "figura": "resultados/figuras/caso3_resumen.png",
+        "psd": "resultados/figuras/caso3_psd.png"
+      }
+    }
+  ],
+  "versiones": {
+    "numpy": "2.3.5",
+    "scipy": "1.17.0",
+    "matplotlib": "3.10.8"
+  },
+  "nota": "La referencia limpia no se presupone disponible al filtro: se reserva para evaluación y SNR. Las frecuencias conocidas son verdad de terreno, no entrada automática al estimador de ruido."
+}
