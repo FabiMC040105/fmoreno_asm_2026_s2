@@ -1,0 +1,42 @@
+{
+  "modo": 4,
+  "fs_hz": 8192,
+  "N": 1024,
+  "delta_f_hz": 8.0,
+  "adc_media": 1866.7490234375,
+  "adc_min": 1074,
+  "adc_max": 2660,
+  "saturacion_adc": false,
+  "frecuencia_pico_principal_hz": 256.0,
+  "amplitud_minima_deteccion_adc": 41.895612976198734,
+  "componentes": [
+    {
+      "frecuencia_esperada_hz": 256,
+      "frecuencia_detectada_hz": 256.0,
+      "amplitud_adc": 598.508756802839,
+      "detectada": true
+    },
+    {
+      "frecuencia_esperada_hz": 512,
+      "frecuencia_detectada_hz": 512.0,
+      "amplitud_adc": 356.2515804904849,
+      "detectada": true
+    },
+    {
+      "frecuencia_esperada_hz": 1024,
+      "frecuencia_detectada_hz": 1024.0,
+      "amplitud_adc": 195.5163213014922,
+      "detectada": true
+    },
+    {
+      "frecuencia_esperada_hz": 1792,
+      "frecuencia_detectada_hz": 1792.0,
+      "amplitud_adc": 169.23643275153813,
+      "detectada": true
+    }
+  ],
+  "todas_detectadas": true,
+  "origen": "ADC FISICO ESP32",
+  "muestras_tardias": 3,
+  "duracion_captura_us": 124948
+}
