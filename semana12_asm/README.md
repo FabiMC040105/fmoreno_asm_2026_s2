@@ -1,83 +1,216 @@
-# CE1110 — Semana 12: Emisor y receptor con ESP32
+# CE1110 - Análisis de Señales Mixtas
+## Sesión asincrónica - Semana 12
 
-Este proyecto corresponde a la parte física de la sesión asincrónica de la semana 12. Se utilizaron dos placas ESP-32D: una genera señales por su DAC y la otra las recibe mediante su ADC. Las muestras se envían por USB a Python, donde se calcula la FFT y se comprueban las frecuencias detectadas.
+### Descripción
 
-## Montaje
+En esta sesión se desarrolló un prototipo para generar, recibir y analizar señales mediante la Transformada Rápida de Fourier (FFT).
 
-- **Emisor:** ESP-32D, salida DAC en GPIO25.
-- **Receptor:** ESP-32D, entrada ADC en GPIO34.
-- **Enlace analógico:** resistencia de 4.7 kΩ en serie y capacitor de 10 nF entre la entrada ADC y GND.
-- **Tierra común:** conectar GND de ambas placas. No unir los pines 3V3 ni 5V.
-- **Adquisición:** 8192 muestras/s (nominales), bloques de 1024 muestras y resolución FFT de 8 Hz.
+El trabajo incluye un sistema en Python para generar y analizar señales, así como una implementación física utilizando dos microcontroladores ESP32.
 
-```text
-ESP32 emisor                   ESP32 receptor
-GPIO25 ---[4.7 kΩ]---+-------- GPIO34
-                      |
-                    [10 nF]
-                      |
-GND ------------------+-------- GND
-```
+También se reutilizan los filtros temporales y espectrales desarrollados anteriormente para el Proyecto Grupal 1.
 
-## Archivos principales
+## 1. Organización de archivos
 
-| Ruta | Contenido |
-| --- | --- |
-| `firmware/02_emisor_dos_placas/` | Código Arduino del emisor. |
-| `firmware/03_receptor_dos_placas/` | Código Arduino del receptor. |
-| `firmware/01_loopback_una_placa/` | Prueba previa con una sola placa. |
-| `python/probar_dos_placas.py` | Control de ambos puertos seriales y ejecución de las capturas. |
-| `python/validar_fft_receptor.py` | Análisis FFT y generación de reportes. |
-| `pruebas/` | Pruebas del analizador en Python. |
-| `datos/fisico_dos_placas/` | CSV, gráficas y reportes de las pruebas reales. |
-| `GUIA_DOS_PLACAS.md` | Procedimiento de montaje y solución de problemas. |
+La carpeta `semana12_asm` contiene:
 
-## Ejecución
+- `firmware/`: programas Arduino para las pruebas con ESP32.
+- `python/`: programas de generación, adquisición y análisis de señales.
+- `pruebas/`: pruebas automáticas de los programas.
+- `datos/fisico/`: capturas de pruebas iniciales.
+- `datos/fisico_dos_placas/`: capturas y resultados de las pruebas con dos ESP32.
+- `resultados_integracion/`: gráficas, tablas y resultados del prototipo en Python.
+- `requirements_fisica.txt`: dependencias para las pruebas físicas.
+- `requirements_integracion.txt`: dependencias del sistema de alto nivel.
 
-1. Cargar los dos programas `.ino` en sus placas desde Arduino IDE (paquete **esp32 by Espressif Systems**, versión 3.x, placa **ESP32 Dev Module**).
-2. Montar el circuito con los USB desconectados y, después de revisarlo, conectar ambas placas a la computadora.
-3. Abrir PowerShell en la raíz del proyecto y cerrar los monitores seriales de Arduino IDE.
-4. Instalar las dependencias y consultar los puertos disponibles:
+## 2. Parámetros utilizados
 
-```powershell
-& "$env:USERPROFILE\asmvenv\Scripts\python.exe" -m pip install -r requirements_fisica.txt
-& "$env:USERPROFILE\asmvenv\Scripts\python.exe" python\probar_dos_placas.py --listar-puertos
-```
+Se trabajó con los siguientes valores:
 
-5. Ejecutar un modo o las cinco pruebas, sustituyendo `COM6` y `COM7` por los puertos reales:
+| Parámetro | Valor |
+|---|---|
+| Frecuencia de muestreo nominal | 8192 Hz |
+| Tamaño de bloque | 1024 muestras |
+| Resolución frecuencial | 8 Hz |
+| Duración nominal del bloque | 125 ms |
+| Frecuencias utilizadas | 256, 512, 1024 y 1792 Hz |
 
-```powershell
-& "$env:USERPROFILE\asmvenv\Scripts\python.exe" python\probar_dos_placas.py --emisor COM6 --receptor COM7 --modo 4
-& "$env:USERPROFILE\asmvenv\Scripts\python.exe" python\probar_dos_placas.py --emisor COM6 --receptor COM7 --todos
-```
+Se implementaron cinco modos de generación:
 
-Si se utiliza otro entorno de Python, sustituir la ruta de `asmvenv` por el ejecutable correspondiente.
-
-## Modos de señal
-
-| Modo | Frecuencias esperadas |
-| --- | --- |
+| Modo | Frecuencias |
+|---|---|
 | 1 | 256 Hz |
 | 2 | 1024 Hz |
 | 3 | 256, 512 y 1024 Hz |
 | 4 | 256, 512, 1024 y 1792 Hz |
 | 5 | 1792 Hz |
 
-## Resultados obtenidos
+Estas frecuencias se utilizan tanto en el prototipo de Python como en el programa del emisor.
 
-En las pruebas con las dos ESP-32D se identificaron las frecuencias esperadas en los cinco modos. Cada captura contiene 1024 muestras; los reportes registraron cuatro muestras tardías por bloque y no indicaron saturación del ADC. Los resultados se encuentran en `datos/fisico_dos_placas/`:
+## 3. Sistema en Python
 
-- `captura_modo*.csv`: muestras adquiridas.
-- `fft_modo*.png`: señal temporal y espectro.
-- `reporte_modo*.json`: resultados de cada captura.
-- `resumen_dos_placas.csv`: comparación de los cinco modos.
+El programa principal se encuentra en:
 
-Para ejecutar las pruebas automáticas del analizador:
+`python/prototipo_alto_nivel.py`
+
+Este programa permite:
+
+- Generar las señales de los cinco modos.
+- Visualizar las señales en el tiempo y en frecuencia.
+- Calcular sus espectros mediante FFT.
+- Reutilizar los filtros temporal IIR y espectral FFT/IFFT de la Tarea 1.
+- Comparar las señales limpias, contaminadas y filtradas.
+- Calcular métricas de MSE y SNR para los casos simulados.
+- Revisar las capturas físicas guardadas.
+- Exportar gráficas y archivos CSV.
+
+### Instalación
+
+Se requiere Python 3 con las bibliotecas NumPy, SciPy, Matplotlib y PySerial.
+
+Desde la raíz del repositorio, ejecutar:
 
 ```powershell
-& "$env:USERPROFILE\asmvenv\Scripts\python.exe" -m unittest discover -s pruebas -p "test_*.py" -v
+py -m pip install -r semana12_asm/requirements_integracion.txt
+py -m pip install -r semana12_asm/requirements_fisica.txt
 ```
 
-## Limitaciones
+### Ejecutar el sistema completo
 
-La frecuencia de muestreo es nominal y se controla por software, por lo que puede existir variación en los intervalos de adquisición. La FFT se ejecuta en Python, **no en el receptor ESP32**. La integración del procesamiento en los microcontroladores queda para las siguientes etapas del proyecto grupal.
+Desde la raíz del repositorio:
+
+```powershell
+py semana12_asm/python/prototipo_alto_nivel.py --completo
+```
+
+Este comando genera los cinco modos, ejecuta los experimentos de filtrado y revisa las capturas físicas disponibles.
+
+Para generar únicamente los modelos de frecuencias:
+
+```powershell
+py semana12_asm/python/prototipo_alto_nivel.py --solo-frecuencias
+```
+
+Los resultados se guardan automáticamente en:
+
+`semana12_asm/resultados_integracion/`
+
+## 4. Implementación física
+
+Se utilizaron dos placas ESP-32D.
+
+### ESP32 emisor
+
+El emisor genera las señales utilizando el DAC interno en el pin GPIO25.
+
+Programa:
+
+`firmware/02_emisor_dos_placas/02_emisor_dos_placas.ino`
+
+### ESP32 receptor
+
+El receptor adquiere las señales mediante el ADC interno en el pin GPIO34.
+
+Programa:
+
+`firmware/03_receptor_dos_placas/03_receptor_dos_placas.ino`
+
+El receptor adquiere bloques de 1024 muestras y los transmite a la computadora mediante comunicación serial.
+
+### Conexión
+
+Entre el DAC del emisor y el ADC del receptor se colocó una resistencia de 4.7 kΩ.
+
+También se utilizó un capacitor de 10 nF entre la entrada del ADC y GND.
+
+Ambas placas comparten GND y se alimentan por separado mediante USB. No se conectan los pines de alimentación entre placas.
+
+### Análisis de las capturas
+
+El programa `python/validar_fft_receptor.py` permite analizar las muestras recibidas.
+
+El procesamiento incluye la eliminación de la componente DC, aplicación de una ventana Hann, cálculo de FFT y comparación de las frecuencias detectadas con las esperadas.
+
+La FFT se realiza actualmente en Python, no dentro del ESP32 receptor.
+
+### Repetir las pruebas físicas
+
+Para repetir las pruebas se deben conectar ambas placas, cargar el firmware correspondiente y conocer sus puertos seriales.
+
+Desde la carpeta `semana12_asm`:
+
+```powershell
+py python/probar_dos_placas.py --listar-puertos
+```
+
+Para ejecutar los cinco modos, sustituyendo los puertos por los correspondientes:
+
+```powershell
+py python/probar_dos_placas.py --emisor COM6 --receptor COM7 --todos
+```
+
+Estas pruebas requieren tener las dos ESP32 conectadas.
+
+## 5. Resultados
+
+### Pruebas físicas
+
+Se realizaron capturas con los cinco modos de generación utilizando las dos placas.
+
+Los archivos guardados muestran la detección de las frecuencias esperadas en los cinco modos.
+
+Cada captura contiene 1024 muestras. Los reportes registran cuatro muestras tardías por bloque y no indican saturación del ADC.
+
+Las evidencias están disponibles en:
+
+`datos/fisico_dos_placas/`
+
+Archivos principales:
+
+- `captura_modo*.csv`: muestras adquiridas por el ADC.
+- `fft_modo*.png`: gráficas temporales y espectrales.
+- `reporte_modo*.json`: resultados del análisis.
+- `resumen_dos_placas.csv`: resumen de las cinco pruebas.
+
+### Prototipo en Python
+
+Los resultados del sistema de alto nivel se encuentran en:
+
+`resultados_integracion/`
+
+Archivos principales:
+
+- `modelo_modo*.png`: gráficas de los cinco modos simulados.
+- `senal_modo*.csv`: muestras generadas en Python.
+- `modos_prototipados.csv`: resumen de frecuencias.
+- `simulacion_filtros_caso*.png`: comparación de los métodos de filtrado.
+- `metricas_simulacion.csv`: métricas de los casos simulados.
+- `contraste_capturas_fisicas.csv`: comprobación de las capturas guardadas.
+- `resumen_ejecucion.json`: resumen de la ejecución.
+
+Los resultados simulados y los resultados físicos se mantienen identificados por separado.
+
+Las métricas de MSE y SNR del prototipo corresponden a simulaciones con referencias conocidas y no representan mediciones del desempeño de los filtros en las ESP32.
+
+## 6. Pruebas automáticas
+
+Desde la raíz del repositorio, ejecutar:
+
+```powershell
+py -m unittest discover -s semana12_asm/pruebas -p "test_*.py" -v
+```
+
+En la ejecución de integración realizada el 29 de octubre de 2026 se obtuvieron 8 pruebas aprobadas.
+
+Estas pruebas revisan los parámetros, las frecuencias generadas, los archivos exportados, los filtros disponibles y las capturas físicas almacenadas.
+
+No sustituyen una nueva prueba experimental del hardware.
+
+## 7. Limitaciones
+
+La frecuencia de muestreo de 8192 Hz es nominal, ya que la adquisición se controla por software.
+
+El receptor ESP32 captura y transmite las muestras, mientras que el análisis FFT se realiza en la computadora.
+
+El procesamiento de reducción de ruido mediante los filtros temporal y espectral se ha evaluado en Python, pero todavía no se encuentra integrado como procesamiento principal dentro de los microcontroladores.
+
+La implementación embebida de los métodos de filtrado y su evaluación en tiempo real corresponden a etapas posteriores del Proyecto Grupal 1.
