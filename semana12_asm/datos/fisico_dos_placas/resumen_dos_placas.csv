@@ -1,0 +1,6 @@
+﻿modo,origen,frecuencias_esperadas_hz,frecuencias_detectadas_hz,todas_detectadas,saturacion_adc,muestras_tardias,duracion_captura_us,temporizacion_advertencia,validacion_preliminar
+1,ADC FISICO DEL RECEPTOR,256,256,True,False,4,124928,False,True
+2,ADC FISICO DEL RECEPTOR,1024,1024,True,False,4,124928,False,True
+3,ADC FISICO DEL RECEPTOR,256;512;1024,256;512;1024,True,False,4,124924,False,True
+4,ADC FISICO DEL RECEPTOR,256;512;1024;1792,256;512;1024;1792,True,False,4,124928,False,True
+5,ADC FISICO DEL RECEPTOR,1792,1792,True,False,4,124928,False,True

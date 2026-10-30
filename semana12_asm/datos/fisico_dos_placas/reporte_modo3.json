@@ -1,0 +1,38 @@
+{
+  "modo": 3,
+  "fs_hz": 8192,
+  "N": 1024,
+  "delta_f_hz": 8.0,
+  "adc_media": 1853.068359375,
+  "adc_min": 1044,
+  "adc_max": 2646,
+  "saturacion_adc": false,
+  "frecuencia_pico_principal_hz": 256.0,
+  "amplitud_minima_deteccion_adc": 41.74340458762077,
+  "componentes": [
+    {
+      "frecuencia_esperada_hz": 256,
+      "frecuencia_detectada_hz": 256.0,
+      "amplitud_adc": 596.3343512517253,
+      "detectada": true
+    },
+    {
+      "frecuencia_esperada_hz": 512,
+      "frecuencia_detectada_hz": 512.0,
+      "amplitud_adc": 354.2783919482839,
+      "detectada": true
+    },
+    {
+      "frecuencia_esperada_hz": 1024,
+      "frecuencia_detectada_hz": 1024.0,
+      "amplitud_adc": 203.91773271173244,
+      "detectada": true
+    }
+  ],
+  "todas_detectadas": true,
+  "origen": "ADC FISICO DEL RECEPTOR",
+  "muestras_tardias": 4,
+  "duracion_captura_us": 124924,
+  "temporizacion_advertencia": false,
+  "validacion_preliminar": true
+}

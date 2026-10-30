@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.vscode/
+datos/simulacion_orquestador/
+# En el repositorio compartido conservar evidencias seleccionadas y no subir logs sensibles
