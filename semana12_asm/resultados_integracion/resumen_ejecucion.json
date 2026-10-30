@@ -1,0 +1,10 @@
+{
+  "sistema": "CE1110 Semana 12",
+  "fs_nominal_hz": 8192,
+  "n": 1024,
+  "delta_f_hz": 8.0,
+  "modos_generados": 5,
+  "modos_con_captura_fisica": 5,
+  "filas_metricas_simulacion": 9,
+  "advertencia": "Las simulaciones y las capturas ADC son datos de distinto origen. No se infieren MSE/SNR físicos sin referencia limpia."
+}
