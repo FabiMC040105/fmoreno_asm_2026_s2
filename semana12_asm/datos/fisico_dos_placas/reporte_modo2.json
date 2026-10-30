@@ -1,0 +1,26 @@
+{
+  "modo": 2,
+  "fs_hz": 8192,
+  "N": 1024,
+  "delta_f_hz": 8.0,
+  "adc_media": 1854.8671875,
+  "adc_min": 927,
+  "adc_max": 2784,
+  "saturacion_adc": false,
+  "frecuencia_pico_principal_hz": 1024.0,
+  "amplitud_minima_deteccion_adc": 65.91245482685193,
+  "componentes": [
+    {
+      "frecuencia_esperada_hz": 1024,
+      "frecuencia_detectada_hz": 1024.0,
+      "amplitud_adc": 941.6064975264561,
+      "detectada": true
+    }
+  ],
+  "todas_detectadas": true,
+  "origen": "ADC FISICO DEL RECEPTOR",
+  "muestras_tardias": 4,
+  "duracion_captura_us": 124928,
+  "temporizacion_advertencia": false,
+  "validacion_preliminar": true
+}
