@@ -13,9 +13,9 @@
   ],
   "hardware_ejecucion": {
     "tipo": "PC / Python, no ESP32",
-    "plataforma": "Windows-10-10.0.26200-SP0",
-    "python": "3.11.9",
-    "numpy": "1.24.2"
+    "plataforma": "Windows-11-10.0.26200-SP0",
+    "python": "3.14.7",
+    "numpy": "2.5.4"
   },
   "fs_hz": 8192,
   "bloque_muestras": 1024,

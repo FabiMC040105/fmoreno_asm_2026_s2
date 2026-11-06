@@ -1,0 +1,290 @@
+/*
+ * Nodo 1 - Adquisicion ADC continua + DMA + antialias + decimacion 3:1.
+ * Objetivo nominal: 24576 Hz ADC -> 8192 Hz de salida.
+ * Placa: ESP32 clasico (por ejemplo ESP32 Dev Module / ESP-32D).
+ * Entrada: GPIO34 = ADC1_CHANNEL_6.
+ * Salida hacia Nodo 2/3: UART2 TX GPIO17, 921600 baudios, float32 little-endian.
+ *
+ * IMPORTANTE:
+ * - Requiere Arduino-ESP32 3.x / ESP-IDF 5.x con esp_adc/adc_continuous.h.
+ * - La frecuencia configurada en ADC no sustituye una calibracion real del reloj.
+ * - La salida anuncia 8192 Hz NOMINALES hasta verificar la frecuencia con señal conocida.
+ * - Nodo1 envia bloques N1B2 de 1024 muestras float32 despues de FIR antialias y DC.
+ */
+
+#include <Arduino.h>
+#include <math.h>
+#include <string.h>
+#include "sdkconfig.h"
+#include "soc/soc_caps.h"
+#include "esp_adc/adc_continuous.h"
+#include "hal/adc_types.h"
+#include "esp_err.h"
+#include "acondicionamiento_nodo1.h"
+
+#if !defined(CONFIG_IDF_TARGET_ESP32)
+#error "Este firmware esta escrito para ESP32 clasico; no usar en ESP32-S2/S3/C3."
+#endif
+
+// ---------------- Configuracion de hardware y muestreo ----------------
+static constexpr int ADC_GPIO = 34;
+static constexpr adc_channel_t ADC_CHANNEL = ADC_CHANNEL_6;
+static constexpr uint32_t ADC_FS_CONFIGURED_HZ = 24576;
+static constexpr uint32_t OUTPUT_FS_NOMINAL_HZ = 8192;
+
+static constexpr uint32_t ADC_RAW_SAMPLES_PER_BLOCK = 3072;
+static constexpr uint32_t OUTPUT_SAMPLES_PER_BLOCK = 1024;
+static constexpr uint32_t ADC_READ_BYTES = 256;     // 128 resultados de 2 bytes en ESP32 clasico.
+static constexpr uint32_t ADC_POOL_BYTES = 16384;
+static constexpr uint32_t UART_BAUD = 921600;
+static constexpr int UART2_RX_PIN = 16;
+static constexpr int UART2_TX_PIN = 17;
+
+// Header N1B2: magic[4], version[1], flags[1], seq[4], fs_adc[4],
+// fs_output[4], n_raw[2], n_output[2], capture_us[4] = 26 bytes.
+static constexpr size_t PACKET_HEADER_BYTES = 26;
+static constexpr size_t PACKET_PAYLOAD_BYTES = OUTPUT_SAMPLES_PER_BLOCK * sizeof(float);
+static constexpr size_t PACKET_CRC_BYTES = 4;
+static constexpr size_t PACKET_TOTAL_BYTES = PACKET_HEADER_BYTES + PACKET_PAYLOAD_BYTES + PACKET_CRC_BYTES;
+
+static adc_continuous_handle_t adc_handle = nullptr;
+static adc_digi_pattern_config_t adc_pattern = {};
+static Nodo1Decimator3 decimator;
+static uint16_t raw_block[ADC_RAW_SAMPLES_PER_BLOCK];
+static float output_block[OUTPUT_SAMPLES_PER_BLOCK];
+static uint8_t dma_buffer[ADC_READ_BYTES];
+static uint8_t packet_buffer[PACKET_TOTAL_BYTES];
+static uint32_t sequence_number = 0;
+static uint32_t adc_pool_overflows = 0;
+static uint32_t invalid_adc_records = 0;
+static uint32_t adc_clipped_records = 0;
+
+// ---------------- Funciones auxiliares de protocolo ----------------
+static void putU16LE(uint8_t *dst, uint16_t value) {
+  dst[0] = static_cast<uint8_t>(value & 0xFFU);
+  dst[1] = static_cast<uint8_t>((value >> 8) & 0xFFU);
+}
+
+static void putU32LE(uint8_t *dst, uint32_t value) {
+  dst[0] = static_cast<uint8_t>(value & 0xFFU);
+  dst[1] = static_cast<uint8_t>((value >> 8) & 0xFFU);
+  dst[2] = static_cast<uint8_t>((value >> 16) & 0xFFU);
+  dst[3] = static_cast<uint8_t>((value >> 24) & 0xFFU);
+}
+
+static uint32_t crc32(const uint8_t *data, size_t length) {
+  uint32_t crc = 0xFFFFFFFFU;
+  for (size_t i = 0; i < length; ++i) {
+    crc ^= data[i];
+    for (uint8_t bit = 0; bit < 8; ++bit) {
+      const uint32_t mask = static_cast<uint32_t>(-(static_cast<int32_t>(crc & 1U)));
+      crc = (crc >> 1U) ^ (0xEDB88320U & mask);
+    }
+  }
+  return ~crc;
+}
+
+static bool sendOutputPacket(const float *samples, uint32_t capture_us, uint8_t flags) {
+  if (samples == nullptr) return false;
+
+  uint8_t *p = packet_buffer;
+  memcpy(p, "N1B2", 4); p += 4;
+  *p++ = 1;                         // version del protocolo
+  *p++ = flags;                     // bit0: ADC raw tuvo muestras en limite
+  putU32LE(p, sequence_number++); p += 4;
+  putU32LE(p, ADC_FS_CONFIGURED_HZ); p += 4;
+  putU32LE(p, OUTPUT_FS_NOMINAL_HZ); p += 4;
+  putU16LE(p, static_cast<uint16_t>(ADC_RAW_SAMPLES_PER_BLOCK)); p += 2;
+  putU16LE(p, static_cast<uint16_t>(OUTPUT_SAMPLES_PER_BLOCK)); p += 2;
+  putU32LE(p, capture_us); p += 4;
+
+  // ESP32 clasico es little-endian; payload float32 compatible con UART receptor.
+  memcpy(p, samples, PACKET_PAYLOAD_BYTES);
+  p += PACKET_PAYLOAD_BYTES;
+
+  const uint32_t crc = crc32(packet_buffer, PACKET_HEADER_BYTES + PACKET_PAYLOAD_BYTES);
+  putU32LE(p, crc);
+
+  const size_t written = Serial2.write(packet_buffer, PACKET_TOTAL_BYTES);
+  return written == PACKET_TOTAL_BYTES;
+}
+
+// ---------------- Configuracion e inicio permanente del ADC ----------------
+static bool initContinuousAdc() {
+  adc_continuous_handle_cfg_t handle_cfg = {};
+  handle_cfg.max_store_buf_size = ADC_POOL_BYTES;
+  handle_cfg.conv_frame_size = ADC_READ_BYTES;
+
+  esp_err_t err = adc_continuous_new_handle(&handle_cfg, &adc_handle);
+  if (err != ESP_OK) {
+    Serial.printf("ERROR adc_continuous_new_handle: %s (0x%08X)\n",
+                  esp_err_to_name(err), static_cast<unsigned int>(err));
+    return false;
+  }
+
+  adc_pattern = {};
+  adc_pattern.atten = ADC_ATTEN_DB_11;
+  adc_pattern.channel = ADC_CHANNEL;
+  adc_pattern.unit = ADC_UNIT_1;
+  adc_pattern.bit_width = SOC_ADC_DIGI_MAX_BITWIDTH;
+
+  adc_continuous_config_t adc_cfg = {};
+  adc_cfg.sample_freq_hz = ADC_FS_CONFIGURED_HZ;
+  adc_cfg.conv_mode = ADC_CONV_SINGLE_UNIT_1;
+  adc_cfg.format = ADC_DIGI_OUTPUT_FORMAT_TYPE1;
+  adc_cfg.pattern_num = 1;
+  adc_cfg.adc_pattern = &adc_pattern;
+
+  err = adc_continuous_config(adc_handle, &adc_cfg);
+  if (err != ESP_OK) {
+    Serial.printf("ERROR adc_continuous_config: %s (0x%08X)\n",
+                  esp_err_to_name(err), static_cast<unsigned int>(err));
+    adc_continuous_deinit(adc_handle);
+    adc_handle = nullptr;
+    return false;
+  }
+
+  err = adc_continuous_start(adc_handle);
+  if (err != ESP_OK) {
+    Serial.printf("ERROR adc_continuous_start: %s (0x%08X)\n",
+                  esp_err_to_name(err), static_cast<unsigned int>(err));
+    adc_continuous_deinit(adc_handle);
+    adc_handle = nullptr;
+    return false;
+  }
+
+  return true;
+}
+
+static bool restartContinuousAdcAfterOverflow() {
+  if (adc_handle == nullptr) return false;
+  adc_continuous_stop(adc_handle);
+  adc_continuous_flush_pool(adc_handle);
+  decimator.reset();
+  esp_err_t err = adc_continuous_start(adc_handle);
+  if (err != ESP_OK) {
+    Serial.printf("ERROR reiniciando ADC: %s (0x%08X)\n",
+                  esp_err_to_name(err), static_cast<unsigned int>(err));
+    return false;
+  }
+  return true;
+}
+
+// ---------------- Recoleccion exacta de 3072 conversiones DMA ----------------
+static bool acquireRawBlock(uint32_t *elapsed_us, uint8_t *frame_flags) {
+  if (elapsed_us == nullptr || frame_flags == nullptr || adc_handle == nullptr) return false;
+  uint32_t filled = 0;
+  const uint32_t start_us = micros();
+  *frame_flags = 0;
+  adc_clipped_records = 0;
+
+  while (filled < ADC_RAW_SAMPLES_PER_BLOCK) {
+    uint32_t bytes_read = 0;
+    esp_err_t err = adc_continuous_read(
+        adc_handle, dma_buffer, sizeof(dma_buffer), &bytes_read, 1000);
+
+    if (err == ESP_ERR_TIMEOUT) continue;
+    if (err == ESP_ERR_INVALID_STATE) {
+      ++adc_pool_overflows;
+      Serial.printf("ADC_POOL_OVERFLOW count=%lu; se descarta bloque parcial\n",
+                    static_cast<unsigned long>(adc_pool_overflows));
+      restartContinuousAdcAfterOverflow();
+      return false;
+    }
+    if (err != ESP_OK) {
+      Serial.printf("ERROR adc_continuous_read: %s (0x%08X)\n",
+                    esp_err_to_name(err), static_cast<unsigned int>(err));
+      return false;
+    }
+
+    if ((bytes_read % SOC_ADC_DIGI_RESULT_BYTES) != 0) {
+      Serial.println("ERROR: bytes DMA no alineados con SOC_ADC_DIGI_RESULT_BYTES");
+      return false;
+    }
+
+    for (uint32_t offset = 0; offset < bytes_read; offset += SOC_ADC_DIGI_RESULT_BYTES) {
+      if (filled >= ADC_RAW_SAMPLES_PER_BLOCK) break;
+      const adc_digi_output_data_t *sample =
+          reinterpret_cast<const adc_digi_output_data_t *>(&dma_buffer[offset]);
+      const uint16_t channel = sample->type1.channel;
+      const uint16_t value = sample->type1.data;
+
+      if (channel != ADC_CHANNEL) {
+        ++invalid_adc_records;
+        Serial.printf("ADC_CHANNEL_INVALID esperado=%u recibido=%u; reiniciando captura\n",
+                      static_cast<unsigned int>(ADC_CHANNEL),
+                      static_cast<unsigned int>(channel));
+        restartContinuousAdcAfterOverflow();
+        return false;
+      }
+      if (value <= 2U || value >= 4093U) {
+        ++adc_clipped_records;
+        *frame_flags |= 0x01U;
+      }
+      raw_block[filled++] = value;
+    }
+  }
+
+  *elapsed_us = micros() - start_us;
+  return true;
+}
+
+// ---------------- Arduino ----------------
+void setup() {
+  Serial.begin(115200);  // Diagnostico por USB; no transporta paquetes binarios.
+  Serial2.begin(UART_BAUD, SERIAL_8N1, UART2_RX_PIN, UART2_TX_PIN);
+  delay(500);
+
+  Serial.println();
+  Serial.println("NODE1_ADC_DMA_DECIMATOR3");
+  Serial.printf("ADC GPIO%d / ADC1_CHANNEL_6 | fs configurada=%lu Hz\n",
+                ADC_GPIO, static_cast<unsigned long>(ADC_FS_CONFIGURED_HZ));
+  Serial.printf("Salida nominal=%lu Hz | bloque ADC=%lu | bloque salida=%lu\n",
+                static_cast<unsigned long>(OUTPUT_FS_NOMINAL_HZ),
+                static_cast<unsigned long>(ADC_RAW_SAMPLES_PER_BLOCK),
+                static_cast<unsigned long>(OUTPUT_SAMPLES_PER_BLOCK));
+  Serial.printf("UART2 TX GPIO%d a %lu baudios\n", UART2_TX_PIN,
+                static_cast<unsigned long>(UART_BAUD));
+
+  if (!initContinuousAdc()) {
+    Serial.println("FATAL: no se pudo iniciar ADC continuo.");
+    while (true) delay(1000);
+  }
+  Serial.println("ADC DMA iniciado continuamente.");
+}
+
+void loop() {
+  uint32_t capture_us = 0;
+  uint8_t flags = 0;
+  if (!acquireRawBlock(&capture_us, &flags)) {
+    delay(1);
+    return;
+  }
+
+  size_t output_count = 0;
+  if (!decimator.process(raw_block, ADC_RAW_SAMPLES_PER_BLOCK,
+                         output_block, OUTPUT_SAMPLES_PER_BLOCK, &output_count)) {
+    Serial.println("ERROR: fallo del decimador FIR 3:1.");
+    decimator.reset();
+    return;
+  }
+  if (output_count != OUTPUT_SAMPLES_PER_BLOCK) {
+    Serial.printf("ERROR: decimador produjo %u muestras, se esperaban %u.\n",
+                  static_cast<unsigned int>(output_count), OUTPUT_SAMPLES_PER_BLOCK);
+    decimator.reset();
+    return;
+  }
+
+  Nodo1Decimator3::removeDcAndNormalize(output_block, output_count, 2048.0f);
+
+  if (!sendOutputPacket(output_block, capture_us, flags)) {
+    Serial.println("ERROR: UART2 no acepto el paquete completo.");
+  } else {
+    Serial.printf("TX seq=%lu | ADC=%lu us | raw_limite=%lu | flags=0x%02X | invalidos=%lu\n",
+                  static_cast<unsigned long>(sequence_number - 1),
+                  static_cast<unsigned long>(capture_us),
+                  static_cast<unsigned long>(adc_clipped_records),
+                  flags,
+                  static_cast<unsigned long>(invalid_adc_records));
+  }
+}

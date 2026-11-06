@@ -1,0 +1,21 @@
+{
+  "caso": 3,
+  "fs_hz": 8192,
+  "N_bloque": 1024,
+  "retardo_muestras": 64,
+  "retardo_ms": 7.8125,
+  "MSE": 0.033014087999527326,
+  "SNR_entrada_dB": -0.004710646818564347,
+  "SNR_salida_dB": 0.04527177847775176,
+  "Delta_SNR_dB": 0.04998242529631611,
+  "Energia_util_pct": 100.02120670897347,
+  "Atenuacion_ruido_dB": 0.05002820223108013,
+  "max_error_ESP32_vs_Python": 4.276940720471245e-07,
+  "RMSE_ESP32_vs_Python": 5.177932560699405e-08,
+  "tiempo_medio_FIR_bloque_us": 5128.75,
+  "tiempo_maximo_FIR_bloque_us": 5154,
+  "presupuesto_bloque_us": 125000.0,
+  "equivalencia_numerica_atol_5e-5": true,
+  "FIR_calculo_menor_125ms": true,
+  "nota": "Tiempo medido solo para el cálculo FIR; excluye ADC, DAC/PWM y comunicación serial."
+}

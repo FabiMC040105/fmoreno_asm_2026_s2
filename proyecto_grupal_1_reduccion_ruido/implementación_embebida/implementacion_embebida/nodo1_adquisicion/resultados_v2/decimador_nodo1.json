@@ -1,0 +1,26 @@
+{
+  "fs_adc_configurada_hz": 24576,
+  "fs_salida_hz": 8192,
+  "factor_decimacion": 3,
+  "muestras_adc_por_bloque": 3072,
+  "muestras_salida_por_bloque": 1024,
+  "duracion_bloque_ms": 125.0,
+  "filtro": "FIR 61 taps Hamming",
+  "corte_hz": 3000.0,
+  "retardo_grupo_muestras_adc": 30,
+  "retardo_grupo_muestras_salida": 10,
+  "retardo_grupo_ms": 1.220703125,
+  "perdida_maxima_0_1350_db": 0.007893845902354236,
+  "nivel_maximo_4096_hasta_nyquist_db": -54.9704629703139,
+  "amplitud_tonos_salida_adc_counts": {
+    "256": 499.83241121111314,
+    "512": 309.7646047195943,
+    "1024": 180.15105051102046
+  },
+  "amplitud_alias_3192_sin_antialias": 160.00902721360123,
+  "amplitud_alias_3192_con_antialias": 0.2737353709647208,
+  "atenuacion_alias_5000_hz_db": -55.33627132208137,
+  "diferencia_max_bloques_vs_continuo": 1.3642420526593924e-12,
+  "bloques_generados": 16,
+  "nota": "Simulacion Python; frecuencia real y respuesta ADC deben validarse con placa y señal conocida."
+}
