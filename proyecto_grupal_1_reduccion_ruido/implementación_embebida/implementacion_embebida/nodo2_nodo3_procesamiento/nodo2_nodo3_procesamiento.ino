@@ -92,7 +92,7 @@ static bool readExact(uint8_t* destination, size_t count, uint32_t timeout_ms) {
       received += got;
     } else {
       if ((uint32_t)(millis() - started) >= timeout_ms) return false;
-      delayMicroseconds(100);
+      delay(1);
     }
   }
   return true;
@@ -101,9 +101,15 @@ static bool readExact(uint8_t* destination, size_t count, uint32_t timeout_ms) {
 static bool seekPacketMagic() {
   uint8_t window[4] = {0, 0, 0, 0};
   size_t used = 0;
+  uint32_t lastStatus = millis();
   while (true) {
     if (Link.available() <= 0) {
-      delayMicroseconds(100);
+      // Cedemos tiempo al planificador para evitar una espera activa indefinida.
+      delay(1);
+      if ((uint32_t)(millis() - lastStatus) >= 5000U) {
+        Serial.println("Nodo 2/3 activo, esperando N1B2 por GPIO16...");
+        lastStatus = millis();
+      }
       continue;
     }
     const int value = Link.read();
