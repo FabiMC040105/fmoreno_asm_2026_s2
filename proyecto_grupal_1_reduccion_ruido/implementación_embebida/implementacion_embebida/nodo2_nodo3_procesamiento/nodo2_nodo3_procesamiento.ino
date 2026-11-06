@@ -9,6 +9,7 @@
  */
 #include <Arduino.h>
 #include <math.h>
+#include <new>
 #include <string.h>
 #include "sdkconfig.h"
 #include "driver/i2s.h"
@@ -23,7 +24,11 @@
 static constexpr uint32_t LINK_BAUD = 921600;
 static constexpr int LINK_RX_PIN = 16;
 static constexpr int LINK_TX_PIN = 17; // reservado; enlace actual es unidireccional
-static constexpr uint32_t FS_HZ = 8192;
+static constexpr uint32_t FS_HZ = 8192; // frecuencia efectiva de la senal procesada
+// En DAC interno, el reloj I2S a 8192 Hz no es admitido por este core.
+// Reproducimos 4 veces cada muestra a 32768 Hz, sin cambiar el DSP.
+static constexpr size_t DAC_REPEAT = 4;
+static constexpr uint32_t DAC_FS_HZ = FS_HZ * DAC_REPEAT;
 static constexpr size_t BLOCK_SAMPLES = 1024;
 static constexpr size_t HOP_SAMPLES = 512;
 static constexpr size_t FIR_ALIGNMENT_DELAY = 448; // FIR ya aporta 64: total 512 muestras
@@ -42,10 +47,11 @@ static float firBlock[BLOCK_SAMPLES];
 static float fftBlock[BLOCK_SAMPLES];
 static float firDelay[FIR_ALIGNMENT_DELAY] = {0};
 static size_t firDelayIndex = 0;
-static uint16_t stereoDac[BLOCK_SAMPLES * 2];
+static uint16_t stereoDac[BLOCK_SAMPLES * DAC_REPEAT * 2];
 
 static FIRLowPass129 fir;
-static SpectralOLA1024V2Stream spectral;
+// El estado FFT (~87 KiB) se reserva en el heap para evitar desbordar .dram0.bss.
+static SpectralOLA1024V2Stream* spectral = nullptr;
 
 static bool haveSequence = false;
 static uint32_t lastSequence = 0;
@@ -173,7 +179,7 @@ static bool receiveN1B2(uint32_t* sequence, uint8_t* flags) {
 static bool initDacI2s() {
   i2s_config_t config = {};
   config.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_DAC_BUILT_IN);
-  config.sample_rate = FS_HZ;
+  config.sample_rate = DAC_FS_HZ;
   config.bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT;
   config.channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT;
   config.communication_format = I2S_COMM_FORMAT_STAND_MSB;
@@ -199,7 +205,22 @@ static bool initDacI2s() {
     Serial.printf("ERROR i2s_set_dac_mode: %s\n", esp_err_to_name(err));
     return false;
   }
-  i2s_zero_dma_buffer(I2S_NUM_0);
+  const float actualRate = i2s_get_clk(I2S_NUM_0);
+  Serial.printf("DAC I2S: solicitado=%lu Hz, reloj reportado=%.1f Hz\n",
+                (unsigned long)DAC_FS_HZ, (double)actualRate);
+  if (!isfinite(actualRate) ||
+      actualRate < (float)DAC_FS_HZ * 0.98f ||
+      actualRate > (float)DAC_FS_HZ * 1.02f) {
+    Serial.println("ERROR: reloj I2S/DAC no valido; no se reproducira audio.");
+    i2s_driver_uninstall(I2S_NUM_0);
+    return false;
+  }
+  err = i2s_zero_dma_buffer(I2S_NUM_0);
+  if (err != ESP_OK) {
+    Serial.printf("ERROR i2s_zero_dma_buffer: %s\n", esp_err_to_name(err));
+    i2s_driver_uninstall(I2S_NUM_0);
+    return false;
+  }
   return true;
 }
 
@@ -231,19 +252,26 @@ static bool processAndOutput(uint8_t flags) {
   // La primera mitad del primer bloque no tiene salida hasta tener dos frames.
   SpectralOLA1024V2Stream::Stats statsA = {};
   SpectralOLA1024V2Stream::Stats statsB = {};
-  const bool firstReady = spectral.pushHop(inputBlock, fftBlock, &statsA);
+  const bool firstReady = spectral->pushHop(inputBlock, fftBlock, &statsA);
   if (!firstReady) memset(fftBlock, 0, HOP_SAMPLES * sizeof(float));
-  const bool secondReady = spectral.pushHop(inputBlock + HOP_SAMPLES,
+  const bool secondReady = spectral->pushHop(inputBlock + HOP_SAMPLES,
                                              fftBlock + HOP_SAMPLES, &statsB);
   if (!secondReady) {
     Serial.println("ERROR: Nodo3 no produjo el segundo hop esperado");
     memset(fftBlock + HOP_SAMPLES, 0, HOP_SAMPLES * sizeof(float));
   }
 
-  // I2S stereo: LEFT -> DAC2 GPIO26 (FFT); RIGHT -> DAC1 GPIO25 (FIR).
+  // 8192 Hz DSP -> 32768 Hz DAC por retencion de orden cero (4x).
+  // Repetir el PAR estereo completo evita intercambiar canales.
+  // LEFT -> DAC2 GPIO26 (FFT); RIGHT -> DAC1 GPIO25 (FIR).
   for (size_t i = 0; i < BLOCK_SAMPLES; ++i) {
-    stereoDac[2 * i] = toDacWord(fftBlock[i]);
-    stereoDac[2 * i + 1] = toDacWord(firBlock[i]);
+    const uint16_t fftWord = toDacWord(fftBlock[i]);
+    const uint16_t firWord = toDacWord(firBlock[i]);
+    for (size_t rep = 0; rep < DAC_REPEAT; ++rep) {
+      const size_t index = (i * DAC_REPEAT + rep) * 2;
+      stereoDac[index] = fftWord;
+      stereoDac[index + 1] = firWord;
+    }
   }
 
   const uint32_t processingUs = micros() - processingStart;
@@ -289,7 +317,22 @@ void setup() {
     Serial.println("FATAL: no se pudo iniciar I2S/DAC interno.");
     while (true) delay(1000);
   }
-  Serial.println("I2S/DAC listo a 8192 Hz. Esperando paquetes N1B2...");
+
+  // Primero se reservan UART e I2S; despues se crea el historial FFT en heap.
+  // No cambia los tamanos FFT, los 8 frames de historial ni el algoritmo.
+  spectral = new (std::nothrow) SpectralOLA1024V2Stream();
+  if (spectral == nullptr) {
+    Serial.printf("FATAL: sin memoria para FFT (%u bytes). Heap libre: %u bytes\n",
+                  (unsigned)sizeof(SpectralOLA1024V2Stream),
+                  (unsigned)ESP.getFreeHeap());
+    while (true) delay(1000);
+  }
+  Serial.printf("FFT reservada: %u bytes | Heap libre: %u bytes\n",
+                (unsigned)sizeof(SpectralOLA1024V2Stream),
+                (unsigned)ESP.getFreeHeap());
+  Serial.printf("DSP a %lu Hz; I2S/DAC a %lu Hz (%u repeticiones/muestra). Esperando N1B2...\n",
+                (unsigned long)FS_HZ, (unsigned long)DAC_FS_HZ,
+                (unsigned)DAC_REPEAT);
 }
 
 void loop() {
@@ -304,7 +347,7 @@ void loop() {
       Serial.printf("SECUENCIA perdida: esperada=%lu recibida=%lu; reseteando filtros\n",
                     (unsigned long)expected, (unsigned long)sequence);
       fir.reset();
-      spectral.reset();
+      spectral->reset();
       memset(firDelay, 0, sizeof(firDelay));
       firDelayIndex = 0;
     }
