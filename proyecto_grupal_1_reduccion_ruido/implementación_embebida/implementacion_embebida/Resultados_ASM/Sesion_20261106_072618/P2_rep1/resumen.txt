@@ -1,0 +1,11 @@
+Prueba P2, repetición 1
+Duración de captura solicitada: 15.0 s
+Filas válidas: 93
+Bloque máximo observado: 108
+Estímulo digital: estimulo.wav
+Los valores provienen del receptor y NO constituyen una captura del sonido DAC.
+MSE, SNR, energía ÚTIL y latencia física: no calculables con estos registros.
+dsp_us: media=23361.75; último=23381.00
+i2s_write_us: media=66715.77; último=66642.00
+errores_crc: media=0.00; último=0.00
+saltos_secuencia: media=0.00; último=0.00

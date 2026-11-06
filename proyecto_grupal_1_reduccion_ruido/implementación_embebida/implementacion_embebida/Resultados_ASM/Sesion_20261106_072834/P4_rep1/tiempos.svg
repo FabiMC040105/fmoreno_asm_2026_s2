@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="410" viewBox="0 0 880 410">
+<rect width="100%" height="100%" fill="white"/>
+<text x="85" y="28" font-family="Arial" font-size="19" font-weight="bold">Tiempos reportados por firmware (microsegundos)</text>
+<line x1="85" x2="855" y1="50.0" y2="50.0" stroke="#e5e7eb"/>
+<text x="76" y="54.0" text-anchor="end" font-family="Arial" font-size="12" fill="#374151">74985.20</text>
+<line x1="85" x2="855" y1="122.5" y2="122.5" stroke="#e5e7eb"/>
+<text x="76" y="126.5" text-anchor="end" font-family="Arial" font-size="12" fill="#374151">60719.60</text>
+<line x1="85" x2="855" y1="195.0" y2="195.0" stroke="#e5e7eb"/>
+<text x="76" y="199.0" text-anchor="end" font-family="Arial" font-size="12" fill="#374151">46454.00</text>
+<line x1="85" x2="855" y1="267.5" y2="267.5" stroke="#e5e7eb"/>
+<text x="76" y="271.5" text-anchor="end" font-family="Arial" font-size="12" fill="#374151">32188.40</text>
+<line x1="85" x2="855" y1="340.0" y2="340.0" stroke="#e5e7eb"/>
+<text x="76" y="344.0" text-anchor="end" font-family="Arial" font-size="12" fill="#374151">17922.80</text>
+<line x1="85" y1="340" x2="855" y2="340" stroke="#334155"/>
+<text x="470" y="392" text-anchor="middle" font-family="Arial" font-size="13">Tiempo desde inicio (s)</text>
+<polyline points="85.0,313.7 135.5,315.2 152.6,314.5 160.3,314.1 177.4,313.6 186.0,313.4 202.2,313.9 219.4,315.3 261.3,313.6 286.1,314.1 310.9,314.1 319.5,313.5 328.0,313.3 352.8,313.8 378.5,315.6 394.7,315.7 419.5,314.5 436.6,314.0 478.6,315.8 487.1,315.6 494.8,315.3 520.5,314.9 553.9,314.7 562.4,315.3 595.8,314.1 604.3,314.1 620.6,314.6 637.7,314.9 645.4,314.8 687.3,314.4 713.0,313.7 729.2,314.4 754.9,313.6 771.2,314.2 796.8,314.0 813.1,314.4 821.7,314.2 837.9,313.8 855.0,315.1" fill="none" stroke="#0d9488" stroke-width="2.4"/>
+<line x1="85" x2="105" y1="367" y2="367" stroke="#0d9488" stroke-width="3"/>
+<text x="111" y="371" font-family="Arial" font-size="12">DSP (us)</text>
+<polyline points="85.0,100.9 135.5,74.6 152.6,76.9 160.3,100.5 177.4,107.6 186.0,86.2 202.2,92.4 219.4,97.7 261.3,86.1 286.1,75.7 310.9,100.5 319.5,84.6 328.0,107.9 352.8,92.5 378.5,76.0 394.7,82.4 419.5,108.3 436.6,75.8 478.6,105.4 487.1,89.1 494.8,107.5 520.5,98.0 553.9,106.4 562.4,89.4 595.8,98.9 604.3,82.3 620.6,83.4 637.7,89.8 645.4,113.1 687.3,105.2 713.0,91.0 729.2,96.9 754.9,82.8 771.2,83.7 796.8,74.2 813.1,75.3 821.7,98.7 837.9,105.7 855.0,106.1" fill="none" stroke="#e87800" stroke-width="2.4"/>
+<line x1="305" x2="325" y1="367" y2="367" stroke="#e87800" stroke-width="3"/>
+<text x="331" y="371" font-family="Arial" font-size="12">I2S (us)</text>
+</svg>

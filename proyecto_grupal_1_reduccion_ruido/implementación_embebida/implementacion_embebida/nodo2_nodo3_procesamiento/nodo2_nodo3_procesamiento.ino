@@ -16,7 +16,6 @@
 #include "esp_err.h"
 #include "fir_esp32.h"
 #include "fft_ola_v2_stream.h"
-#include "metricas_receptor.h"
 
 #if !defined(CONFIG_IDF_TARGET_ESP32)
 #error "Este firmware usa el DAC e I2S0 del ESP32 clasico; no usar en S2/S3/C3."
@@ -296,14 +295,6 @@ static bool processAndOutput(uint8_t flags) {
   }
 
   ++packetsOk;
-  // Telemetria del receptor: se emite una fila MTR cada 8 bloques.
-  // El tiempo ADC proviene de Nodo1; no es latencia extremo a extremo.
-  metricas_asm::registrar(inputBlock, firBlock, fftBlock, BLOCK_SAMPLES,
-      lastSequence, flags, packetsOk, packetsBadCrc,
-      packetsBadFormat, sequenceGaps, dacErrors,
-      readU32LE(headerRest + 18), processingUs, i2sWriteUs,
-      sizeof(SpectralOLA1024V2Stream));
-
   if ((packetsOk % 8U) == 0U || flags != 0) {
     Serial.printf("Bloques=%lu | DSP+DAC pack=%lu us | I2S write=%lu us | FFT frames=%lu | flags_N1=%02X | CRC errores=%lu | gaps=%lu\n",
                   (unsigned long)packetsOk,

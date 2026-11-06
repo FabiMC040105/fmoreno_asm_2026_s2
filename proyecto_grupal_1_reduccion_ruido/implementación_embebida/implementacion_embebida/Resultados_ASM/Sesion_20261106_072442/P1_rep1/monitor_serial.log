@@ -1,0 +1,15 @@
+0.984 | Bloques=16 | DSP+DAC pack=23118 us | I2S write=68511 us | FFT frames=32 | flags_N1=00 | CRC errores=0 | gaps=0
+2.203 | Bloques=24 | DSP+DAC pack=23026 us | I2S write=65355 us | FFT frames=48 | flags_N1=00 | CRC errores=0 | gaps=0
+3.437 | Bloques=32 | DSP+DAC pack=23067 us | I2S write=69872 us | FFT frames=64 | flags_N1=00 | CRC errores=0 | gaps=0
+4.343 | Bloques=38 | DSP+DAC pack=23096 us | I2S write=66916 us | FFT frames=76 | flags_N1=01 | CRC errores=0 | gaps=0
+4.500 | Bloques=39 | DSP+DAC pack=23132 us | I2S write=70123 us | FFT frames=78 | flags_N1=01 | CRC errores=0 | gaps=0
+4.640 | Bloques=40 | DSP+DAC pack=23171 us | I2S write=65529 us | FFT frames=80 | flags_N1=00 | CRC errores=0 | gaps=0
+4.953 | Bloques=42 | DSP+DAC pack=23131 us | I2S write=65257 us | FFT frames=84 | flags_N1=01 | CRC errores=0 | gaps=0
+5.875 | Bloques=48 | DSP+DAC pack=23037 us | I2S write=70220 us | FFT frames=96 | flags_N1=00 | CRC errores=0 | gaps=0
+7.093 | Bloques=56 | DSP+DAC pack=23076 us | I2S write=66941 us | FFT frames=112 | flags_N1=00 | CRC errores=0 | gaps=0
+8.312 | Bloques=64 | DSP+DAC pack=23091 us | I2S write=62672 us | FFT frames=128 | flags_N1=00 | CRC errores=0 | gaps=0
+9.531 | Bloques=72 | DSP+DAC pack=23023 us | I2S write=67312 us | FFT frames=144 | flags_N1=00 | CRC errores=0 | gaps=0
+10.750 | Bloques=80 | DSP+DAC pack=23071 us | I2S write=64018 us | FFT frames=160 | flags_N1=00 | CRC errores=0 | gaps=0
+11.984 | Bloques=88 | DSP+DAC pack=23071 us | I2S write=68583 us | FFT frames=176 | flags_N1=00 | CRC errores=0 | gaps=0
+13.203 | Bloques=96 | DSP+DAC pack=23061 us | I2S write=64345 us | FFT frames=192 | flags_N1=00 | CRC errores=0 | gaps=0
+14.421 | Bloques=104 | DSP+DAC pack=23082 us | I2S write=68890 us | FFT frames=208 | flags_N1=00 | CRC errores=0 | gaps=0
