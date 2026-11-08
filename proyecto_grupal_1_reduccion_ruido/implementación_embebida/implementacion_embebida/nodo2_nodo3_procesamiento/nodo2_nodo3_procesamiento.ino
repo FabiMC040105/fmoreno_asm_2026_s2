@@ -16,6 +16,7 @@
 #include "esp_err.h"
 #include "fir_esp32.h"
 #include "fft_ola_v2_stream.h"
+#include "metricas_receptor.h"
 
 #if !defined(CONFIG_IDF_TARGET_ESP32)
 #error "Este firmware usa el DAC e I2S0 del ESP32 clasico; no usar en S2/S3/C3."
@@ -60,6 +61,9 @@ static uint32_t packetsBadCrc = 0;
 static uint32_t packetsBadFormat = 0;
 static uint32_t sequenceGaps = 0;
 static uint32_t dacErrors = 0;
+static uint32_t lastRxUs = 0;
+static uint32_t latestRxPeriodUs = 0;
+static uint32_t latestAdcCaptureUs = 0;
 
 static uint16_t readU16LE(const uint8_t* p) {
   return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
@@ -159,6 +163,7 @@ static bool receiveN1B2(uint32_t* sequence, uint8_t* flags) {
   const uint8_t version = headerRest[0];
   *flags = headerRest[1];
   *sequence = readU32LE(headerRest + 2);
+  latestAdcCaptureUs = readU32LE(headerRest + 18);
   const uint32_t fsOutput = readU32LE(headerRest + 10);
   const uint16_t rawSamples = readU16LE(headerRest + 14);
   const uint16_t outputSamples = readU16LE(headerRest + 16);
@@ -295,14 +300,22 @@ static bool processAndOutput(uint8_t flags) {
   }
 
   ++packetsOk;
-  if ((packetsOk % 8U) == 0U || flags != 0) {
-    Serial.printf("Bloques=%lu | DSP+DAC pack=%lu us | I2S write=%lu us | FFT frames=%lu | flags_N1=%02X | CRC errores=%lu | gaps=%lu\n",
+  if ((packetsOk % 8U) == 0U) {
+    Serial.printf("Bloques=%lu | DSP+DAC pack=%lu us | I2S write=%lu us | FFT frames=%lu | flags_N1=%02X | CRC errores=%lu | gaps=%lu | rx_period_us=%lu\n",
                   (unsigned long)packetsOk,
                   (unsigned long)processingUs,
                   (unsigned long)i2sWriteUs,
                   (unsigned long)statsB.frames_processed,
                   flags, (unsigned long)packetsBadCrc,
-                  (unsigned long)sequenceGaps);
+                  (unsigned long)sequenceGaps,
+                  (unsigned long)latestRxPeriodUs);
+    // Estas metricas salen de las muestras calculadas en la ESP32.
+    // NO equivalen a MSE/SNR contra referencia limpia, que no esta conectada.
+    metricas_asm::registrar(inputBlock, firBlock, fftBlock, BLOCK_SAMPLES,
+                            lastSequence, flags, packetsOk, packetsBadCrc,
+                            packetsBadFormat, sequenceGaps, dacErrors,
+                            latestAdcCaptureUs, processingUs, i2sWriteUs,
+                            sizeof(SpectralOLA1024V2Stream));
   }
   return true;
 }
@@ -345,6 +358,9 @@ void loop() {
   uint32_t sequence = 0;
   uint8_t flags = 0;
   if (!receiveN1B2(&sequence, &flags)) return;
+  const uint32_t nowRxUs = micros();
+  latestRxPeriodUs = lastRxUs ? (uint32_t)(nowRxUs - lastRxUs) : 0;
+  lastRxUs = nowRxUs;
 
   if (haveSequence) {
     const uint32_t expected = lastSequence + 1U;

@@ -58,6 +58,8 @@ static uint32_t sequence_number = 0;
 static uint32_t adc_pool_overflows = 0;
 static uint32_t invalid_adc_records = 0;
 static uint32_t adc_clipped_records = 0;
+// Diagnostico: cadencia entre bloques transmitidos (incluye procesamiento y UART).
+static uint32_t last_successful_tx_us = 0;
 
 // ---------------- Funciones auxiliares de protocolo ----------------
 static void putU16LE(uint8_t *dst, uint16_t value) {
@@ -280,11 +282,21 @@ void loop() {
   if (!sendOutputPacket(output_block, capture_us, flags)) {
     Serial.println("ERROR: UART2 no acepto el paquete completo.");
   } else {
-    Serial.printf("TX seq=%lu | ADC=%lu us | raw_limite=%lu | flags=0x%02X | invalidos=%lu\n",
-                  static_cast<unsigned long>(sequence_number - 1),
-                  static_cast<unsigned long>(capture_us),
-                  static_cast<unsigned long>(adc_clipped_records),
-                  flags,
-                  static_cast<unsigned long>(invalid_adc_records));
+    const uint32_t now_us = micros();
+    const uint32_t period_us = last_successful_tx_us == 0 ? 0 :
+                               (uint32_t)(now_us - last_successful_tx_us);
+    last_successful_tx_us = now_us;
+    // Evitar imprimir cada 125 ms: el USB puede introducir bloqueo temporal.
+    if (((sequence_number - 1) % 8U) == 0U) {
+      const float fs_out_estimado = period_us ?
+          (1000000.0f * OUTPUT_SAMPLES_PER_BLOCK / period_us) : 0.0f;
+      Serial.printf("TX seq=%lu | ADC=%lu us | tx_period_us=%lu | fs_out_est=%.1f | raw_limite=%lu | flags=0x%02X | invalidos=%lu\n",
+                    (unsigned long)(sequence_number - 1),
+                    (unsigned long)capture_us,
+                    (unsigned long)period_us,
+                    (double)fs_out_estimado,
+                    (unsigned long)adc_clipped_records, flags,
+                    (unsigned long)invalid_adc_records);
+    }
   }
 }
