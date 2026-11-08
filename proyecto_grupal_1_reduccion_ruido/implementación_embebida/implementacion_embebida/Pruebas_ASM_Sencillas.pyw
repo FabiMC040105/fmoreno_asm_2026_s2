@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Banco simple P1-P6 para Windows. 1 archivo; sin cambios al firmware ESP32.
-Necesita pyserial. El PC reproduce estimulos; la ESP32 procesa el audio.
-No mide la salida analogica ni calcula SNR/MSE fisicos sin referencia limpia.
-"""
 import csv
 import html
 import math
@@ -241,7 +237,7 @@ class MainApp:
         self.events = queue.Queue()
         box=ttk.Frame(root,padding=16)
         box.pack(fill='both',expand=True)
-        ttk.Label(box,text='Banco sencillo P1–P6',font=('Segoe UI',16,'bold')).grid(row=0,column=0,columnspan=4,sticky='w',pady=(0,12))
+        ttk.Label(box,text='Software de Pruebas ASM',font=('Segoe UI',16,'bold')).grid(row=0,column=0,columnspan=4,sticky='w',pady=(0,12))
         ttk.Label(box,text='Puerto COM receptor:').grid(row=1,column=0,sticky='w')
         self.ports=ttk.Combobox(box,textvariable=self.port,width=16)
         self.ports.grid(row=1,column=1,sticky='w')
