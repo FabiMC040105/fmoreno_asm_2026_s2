@@ -21,6 +21,10 @@
 #include "hal/adc_types.h"
 #include "esp_err.h"
 #include "acondicionamiento_nodo1.h"
+#include "fft_diagnostico_n1.h"
+#include "estadisticas_tiempo.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #if !defined(CONFIG_IDF_TARGET_ESP32)
 #error "Este firmware esta escrito para ESP32 clasico; no usar en ESP32-S2/S3/C3."
@@ -39,6 +43,13 @@ static constexpr uint32_t ADC_POOL_BYTES = 16384;
 static constexpr uint32_t UART_BAUD = 921600;
 static constexpr int UART2_RX_PIN = 16;
 static constexpr int UART2_TX_PIN = 17;
+// Validacion opcional: estos pines NO se conectan salvo medicion con analizador.
+static constexpr bool DIAG_GPIO_HABILITADOS = false;
+static constexpr int DIAG_N1_BLOQUE_GPIO = 32; // pulso: fin de lectura DMA del bloque
+static constexpr int DIAG_N1_UART_GPIO = 33;   // alto durante Serial2.write (solo API)
+static constexpr bool DIAG_FFT_HABILITADA = true;
+static constexpr uint32_t DIAG_FFT_CADA_BLOQUES = 8;
+static constexpr uint32_t DIAG_TIEMPOS_CADA_BLOQUES = 32;
 
 // Header N1B2: magic[4], version[1], flags[1], seq[4], fs_adc[4],
 // fs_output[4], n_raw[2], n_output[2], capture_us[4] = 26 bytes.
@@ -60,6 +71,52 @@ static uint32_t invalid_adc_records = 0;
 static uint32_t adc_clipped_records = 0;
 // Diagnostico: cadencia entre bloques transmitidos (incluye procesamiento y UART).
 static uint32_t last_successful_tx_us = 0;
+// Estadisticas internas: NO reemplazan mediciones externas del osciloscopio.
+static EstadisticasTiempo periodoAdquisicion;
+static EstadisticasTiempo duracionLecturaADC;
+static EstadisticasTiempo duracionApiUART;
+static uint32_t ultimaAdquisicionUs = 0;
+static uint32_t ultimaApiUARTUs = 0;
+static uint32_t bloquesAdquiridos = 0;
+static uint32_t capturasFallidas = 0; // intentos fallidos, NO numero exacto de muestras perdidas
+
+// Buzon de una sola copia. La FFT corre en tarea secundaria de baja prioridad.
+// No espera a que finalice: si esta ocupada, se omite solo el diagnostico.
+static FFTDiagnosticaN1 fftDiagnostica;
+static float copiaParaFFT[FFTDiagnosticaN1::N];
+static TaskHandle_t tareaFFT = nullptr;
+static volatile uint32_t estadoFFT = 0; // 0 libre, 1 copiando, 2 lista/en ejecucion
+static uint32_t secuenciaFFT = 0;
+static uint32_t diagnosticosOmitidos = 0;
+
+static void tareaDiagnosticoFFT(void*) {
+  for (;;) {
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    if (__atomic_load_n(&estadoFFT, __ATOMIC_ACQUIRE) != 2U) continue;
+    ResultadoFFTDiagnostica resultado = {};
+    const uint32_t sec = secuenciaFFT;
+    const uint32_t inicio = micros();
+    fftDiagnostica.analizar(copiaParaFFT, &resultado);
+    const uint32_t duracionUs = micros() - inicio;
+    __atomic_store_n(&estadoFFT, 0U, __ATOMIC_RELEASE);
+    // USB de esta placa, NUNCA UART2. Se registra memoria reservada y heap libre.
+    Serial.printf(
+        "FFT1,seq=%lu,fft_us=%lu,ram_est=%u,heap=%u,min_heap=%u,"
+        "f1=%.0f:%.4f,f2=%.0f:%.4f,f3=%.0f:%.4f,f4=%.0f:%.4f,f5=%.0f:%.4f,"
+        "E_0_500=%.6g,E_500_1500=%.6g,E_1500_3000=%.6g,E_3000_4096=%.6g,omitidas=%lu\n",
+        (unsigned long)sec, (unsigned long)duracionUs,
+        (unsigned)(sizeof(fftDiagnostica) + sizeof(copiaParaFFT) + 8192U),
+        (unsigned)ESP.getFreeHeap(), (unsigned)ESP.getMinFreeHeap(),
+        (double)resultado.frecuenciaHz[0], (double)resultado.amplitud[0],
+        (double)resultado.frecuenciaHz[1], (double)resultado.amplitud[1],
+        (double)resultado.frecuenciaHz[2], (double)resultado.amplitud[2],
+        (double)resultado.frecuenciaHz[3], (double)resultado.amplitud[3],
+        (double)resultado.frecuenciaHz[4], (double)resultado.amplitud[4],
+        (double)resultado.energiaBandas[0], (double)resultado.energiaBandas[1],
+        (double)resultado.energiaBandas[2], (double)resultado.energiaBandas[3],
+        (unsigned long)diagnosticosOmitidos);
+  }
+}
 
 // ---------------- Funciones auxiliares de protocolo ----------------
 static void putU16LE(uint8_t *dst, uint16_t value) {
@@ -107,7 +164,13 @@ static bool sendOutputPacket(const float *samples, uint32_t capture_us, uint8_t 
   const uint32_t crc = crc32(packet_buffer, PACKET_HEADER_BYTES + PACKET_PAYLOAD_BYTES);
   putU32LE(p, crc);
 
+  if (DIAG_GPIO_HABILITADOS) digitalWrite(DIAG_N1_UART_GPIO, HIGH);
+  const uint32_t inicioUART = micros();
   const size_t written = Serial2.write(packet_buffer, PACKET_TOTAL_BYTES);
+  ultimaApiUARTUs = micros() - inicioUART;
+  if (DIAG_GPIO_HABILITADOS) digitalWrite(DIAG_N1_UART_GPIO, LOW);
+  duracionApiUART.agregar(ultimaApiUARTUs);
+  // NO es tiempo real de bits sobre el cable: Serial2.write puede encolar bytes.
   return written == PACKET_TOTAL_BYTES;
 }
 
@@ -235,6 +298,21 @@ static bool acquireRawBlock(uint32_t *elapsed_us, uint8_t *frame_flags) {
 void setup() {
   Serial.begin(115200);  // Diagnostico por USB; no transporta paquetes binarios.
   Serial2.begin(UART_BAUD, SERIAL_8N1, UART2_RX_PIN, UART2_TX_PIN);
+  if (DIAG_GPIO_HABILITADOS) {
+    pinMode(DIAG_N1_BLOQUE_GPIO, OUTPUT);
+    pinMode(DIAG_N1_UART_GPIO, OUTPUT);
+    digitalWrite(DIAG_N1_BLOQUE_GPIO, LOW);
+    digitalWrite(DIAG_N1_UART_GPIO, LOW);
+  }
+  if (DIAG_FFT_HABILITADA) {
+    fftDiagnostica.preparar(); // ventana precalculada antes de iniciar ADC
+    const BaseType_t ok = xTaskCreatePinnedToCore(
+        tareaDiagnosticoFFT, "FFT_diag_N1", 8192, nullptr, 1, &tareaFFT, 0);
+    if (ok != pdPASS) {
+      tareaFFT = nullptr;
+      Serial.println("AVISO: FFT diagnostica deshabilitada: sin memoria para tarea");
+    }
+  }
   delay(500);
 
   Serial.println();
@@ -259,8 +337,20 @@ void loop() {
   uint32_t capture_us = 0;
   uint8_t flags = 0;
   if (!acquireRawBlock(&capture_us, &flags)) {
-    delay(1);
+    ++capturasFallidas;
+    delay(1); // ruta de error ya existente; no se agrega demora en ruta normal
     return;
+  }
+  const uint32_t finAdquisicionUs = micros();
+  if (ultimaAdquisicionUs != 0) {
+    periodoAdquisicion.agregar((uint32_t)(finAdquisicionUs - ultimaAdquisicionUs));
+  }
+  ultimaAdquisicionUs = finAdquisicionUs;
+  duracionLecturaADC.agregar(capture_us);
+  ++bloquesAdquiridos;
+  if (DIAG_GPIO_HABILITADOS) {
+    digitalWrite(DIAG_N1_BLOQUE_GPIO, HIGH);
+    digitalWrite(DIAG_N1_BLOQUE_GPIO, LOW);
   }
 
   size_t output_count = 0;
@@ -287,6 +377,22 @@ void loop() {
                                (uint32_t)(now_us - last_successful_tx_us);
     last_successful_tx_us = now_us;
     // Evitar imprimir cada 125 ms: el USB puede introducir bloqueo temporal.
+    if (bloquesAdquiridos % DIAG_TIEMPOS_CADA_BLOQUES == 0U) {
+      // Tiempo por bloque nominal: 1024/8192 s = 125000 us.
+      // Un promedio interno correcto no prueba el reloj fisico del ADC.
+      Serial.printf("T1,adquiridos=%lu,periodo_media=%.1f,min=%lu,max=%lu,sd=%.1f,"
+                    "lectura_adc_media=%.1f,uart_api_media=%.1f,uart_api_ultimo=%lu,"
+                    "uart_nominal_cable_us=%.1f,overflow=%lu,fallos_captura=%lu,fft_omitidas=%lu\n",
+                    (unsigned long)bloquesAdquiridos,
+                    periodoAdquisicion.media,
+                    (unsigned long)periodoAdquisicion.minSeguro(),
+                    (unsigned long)periodoAdquisicion.maximo,
+                    periodoAdquisicion.desviacion(), duracionLecturaADC.media,
+                    duracionApiUART.media, (unsigned long)ultimaApiUARTUs,
+                    (double)(10000000.0 * PACKET_TOTAL_BYTES / UART_BAUD),
+                    (unsigned long)adc_pool_overflows, (unsigned long)capturasFallidas,
+                    (unsigned long)diagnosticosOmitidos);
+    }
     if (((sequence_number - 1) % 8U) == 0U) {
       const float fs_out_estimado = period_us ?
           (1000000.0f * OUTPUT_SAMPLES_PER_BLOCK / period_us) : 0.0f;
@@ -297,6 +403,21 @@ void loop() {
                     (double)fs_out_estimado,
                     (unsigned long)adc_clipped_records, flags,
                     (unsigned long)invalid_adc_records);
+    }
+  }
+
+  // Copiar despues de construir el paquete; nunca escribir sobre output_block.
+  if (DIAG_FFT_HABILITADA && tareaFFT != nullptr &&
+      (bloquesAdquiridos % DIAG_FFT_CADA_BLOQUES) == 0U) {
+    uint32_t libre = 0U;
+    if (__atomic_compare_exchange_n(&estadoFFT, &libre, 1U, false,
+                                    __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
+      memcpy(copiaParaFFT, output_block, sizeof(copiaParaFFT));
+      secuenciaFFT = sequence_number - 1U;
+      __atomic_store_n(&estadoFFT, 2U, __ATOMIC_RELEASE);
+      xTaskNotifyGive(tareaFFT);
+    } else {
+      ++diagnosticosOmitidos; // sacrifica diagnostico, NO el audio
     }
   }
 }

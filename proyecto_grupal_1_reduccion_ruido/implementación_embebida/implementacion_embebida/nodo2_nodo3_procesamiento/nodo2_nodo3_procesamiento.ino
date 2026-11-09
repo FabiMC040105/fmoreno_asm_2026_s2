@@ -17,6 +17,7 @@
 #include "fir_esp32.h"
 #include "fft_ola_v2_stream.h"
 #include "metricas_receptor.h"
+#include "estadisticas_tiempo.h"
 
 #if !defined(CONFIG_IDF_TARGET_ESP32)
 #error "Este firmware usa el DAC e I2S0 del ESP32 clasico; no usar en S2/S3/C3."
@@ -38,6 +39,10 @@ static constexpr size_t PAYLOAD_BYTES = BLOCK_SAMPLES * sizeof(float);
 static constexpr size_t CRC_BYTES = 4;
 static constexpr size_t PACKET_DATA_BYTES = HEADER_BYTES + PAYLOAD_BYTES;
 static constexpr uint32_t PACKET_TIMEOUT_MS = 180;
+static constexpr bool DIAG_GPIO_HABILITADOS = false;
+static constexpr int DIAG_N23_RX_VALIDO_GPIO = 32; // pulso al verificar CRC/formato
+static constexpr int DIAG_N23_I2S_WRITE_GPIO = 33; // alto solo durante llamada i2s_write
+static constexpr uint32_t DIAG_TIEMPOS_CADA_BLOQUES = 32;
 
 static HardwareSerial Link(2);
 static uint8_t packetData[PACKET_DATA_BYTES];
@@ -64,6 +69,9 @@ static uint32_t dacErrors = 0;
 static uint32_t lastRxUs = 0;
 static uint32_t latestRxPeriodUs = 0;
 static uint32_t latestAdcCaptureUs = 0;
+static EstadisticasTiempo periodosRx, tiemposFIR, tiemposFFT, tiemposI2S, tiemposDSP;
+static uint32_t paquetesPerdidosEstimados = 0; // por gaps positivos de secuencia
+
 
 static uint16_t readU16LE(const uint8_t* p) {
   return (uint16_t)p[0] | ((uint16_t)p[1] << 8);
@@ -184,6 +192,10 @@ static bool receiveN1B2(uint32_t* sequence, uint8_t* flags) {
       return false;
     }
   }
+  if (DIAG_GPIO_HABILITADOS) {
+    digitalWrite(DIAG_N23_RX_VALIDO_GPIO, HIGH);
+    digitalWrite(DIAG_N23_RX_VALIDO_GPIO, LOW);
+  }
   return true;
 }
 
@@ -249,6 +261,7 @@ static bool processAndOutput(uint8_t flags) {
   // filtrar usando muestras separadas por una discontinuidad desconocida.
   // El contador de secuencia se verifica en loop() antes de esta funcion.
   const uint32_t processingStart = micros();
+  const uint32_t firStart = micros();
 
   // Nodo 2: FIR129 por muestra y retardo extra 448 para igualar 512 muestras
   // (64 del FIR + 448 de alineacion) con la latencia del Nodo 3.
@@ -258,6 +271,9 @@ static bool processAndOutput(uint8_t flags) {
     firDelay[firDelayIndex] = filtered;
     firDelayIndex = (firDelayIndex + 1) % FIR_ALIGNMENT_DELAY;
   }
+
+  tiemposFIR.agregar(micros() - firStart);
+  const uint32_t fftStart = micros();
 
   // Nodo 3: dos frames por bloque de entrada, cada uno consume 512 muestras.
   // La primera mitad del primer bloque no tiene salida hasta tener dos frames.
@@ -271,6 +287,8 @@ static bool processAndOutput(uint8_t flags) {
     Serial.println("ERROR: Nodo3 no produjo el segundo hop esperado");
     memset(fftBlock + HOP_SAMPLES, 0, HOP_SAMPLES * sizeof(float));
   }
+
+  tiemposFFT.agregar(micros() - fftStart);
 
   // 8192 Hz DSP -> 32768 Hz DAC por retencion de orden cero (4x).
   // Repetir el PAR estereo completo evita intercambiar canales.
@@ -287,10 +305,14 @@ static bool processAndOutput(uint8_t flags) {
 
   const uint32_t processingUs = micros() - processingStart;
   size_t bytesWritten = 0;
+  if (DIAG_GPIO_HABILITADOS) digitalWrite(DIAG_N23_I2S_WRITE_GPIO, HIGH);
   const uint32_t i2sStart = micros();
   const esp_err_t err = i2s_write(I2S_NUM_0, stereoDac, sizeof(stereoDac),
                                   &bytesWritten, portMAX_DELAY);
   const uint32_t i2sWriteUs = micros() - i2sStart;
+  if (DIAG_GPIO_HABILITADOS) digitalWrite(DIAG_N23_I2S_WRITE_GPIO, LOW);
+  tiemposI2S.agregar(i2sWriteUs);
+  // i2s_write retorna por encolado/espera de DMA; NO por reproduccion fisica.
   if (err != ESP_OK || bytesWritten != sizeof(stereoDac)) {
     ++dacErrors;
     Serial.printf("ERROR I2S write: %s bytes=%u/%u\n",
@@ -300,6 +322,27 @@ static bool processAndOutput(uint8_t flags) {
   }
 
   ++packetsOk;
+  tiemposDSP.agregar(processingUs);
+  if (packetsOk % DIAG_TIEMPOS_CADA_BLOQUES == 0U) {
+    Serial.printf("T23_RX,ok=%lu,avg=%.1f,min=%lu,max=%lu,sd=%.1f,"
+                  "crc=%lu,format=%lu,gaps=%lu,perdidos_estim=%lu,dac=%lu\n",
+                  (unsigned long)packetsOk, periodosRx.media,
+                  (unsigned long)periodosRx.minSeguro(),
+                  (unsigned long)periodosRx.maximo, periodosRx.desviacion(),
+                  (unsigned long)packetsBadCrc, (unsigned long)packetsBadFormat,
+                  (unsigned long)sequenceGaps,
+                  (unsigned long)paquetesPerdidosEstimados,
+                  (unsigned long)dacErrors);
+    Serial.printf("T23_DSP,FIR_avg=%.1f,FIR_max=%lu,FFT_avg=%.1f,FFT_max=%lu,"
+                  "I2S_api_avg=%.1f,I2S_api_min=%lu,I2S_api_max=%lu,I2S_api_sd=%.1f,"
+                  "DSP_avg=%.1f,heap=%u,min_heap=%u\n",
+                  tiemposFIR.media, (unsigned long)tiemposFIR.maximo,
+                  tiemposFFT.media, (unsigned long)tiemposFFT.maximo,
+                  tiemposI2S.media, (unsigned long)tiemposI2S.minSeguro(),
+                  (unsigned long)tiemposI2S.maximo, tiemposI2S.desviacion(),
+                  tiemposDSP.media, (unsigned)ESP.getFreeHeap(),
+                  (unsigned)ESP.getMinFreeHeap());
+  }
   if ((packetsOk % 8U) == 0U) {
     Serial.printf("Bloques=%lu | DSP+DAC pack=%lu us | I2S write=%lu us | FFT frames=%lu | flags_N1=%02X | CRC errores=%lu | gaps=%lu | rx_period_us=%lu\n",
                   (unsigned long)packetsOk,
@@ -327,6 +370,12 @@ void setup() {
   Serial.printf("Entrada UART2 RX GPIO%d @ %lu baudios\n", LINK_RX_PIN,
                 (unsigned long)LINK_BAUD);
   Serial.println("Nodo2 FIR129 -> DAC GPIO25; Nodo3 FFT v2 -> DAC GPIO26");
+  if (DIAG_GPIO_HABILITADOS) {
+    pinMode(DIAG_N23_RX_VALIDO_GPIO, OUTPUT);
+    pinMode(DIAG_N23_I2S_WRITE_GPIO, OUTPUT);
+    digitalWrite(DIAG_N23_RX_VALIDO_GPIO, LOW);
+    digitalWrite(DIAG_N23_I2S_WRITE_GPIO, LOW);
+  }
 
   Link.setRxBufferSize(8192);
   Link.begin(LINK_BAUD, SERIAL_8N1, LINK_RX_PIN, LINK_TX_PIN);
@@ -361,11 +410,14 @@ void loop() {
   const uint32_t nowRxUs = micros();
   latestRxPeriodUs = lastRxUs ? (uint32_t)(nowRxUs - lastRxUs) : 0;
   lastRxUs = nowRxUs;
+  if (latestRxPeriodUs > 0) periodosRx.agregar(latestRxPeriodUs);
 
   if (haveSequence) {
     const uint32_t expected = lastSequence + 1U;
     if (sequence != expected) {
       ++sequenceGaps;
+      const int32_t faltan = (int32_t)(sequence - expected);
+      if (faltan > 0) paquetesPerdidosEstimados += (uint32_t)faltan;
       Serial.printf("SECUENCIA perdida: esperada=%lu recibida=%lu; reseteando filtros\n",
                     (unsigned long)expected, (unsigned long)sequence);
       fir.reset();
